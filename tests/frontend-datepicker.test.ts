@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {formatDigitsToDate,formatIsoToDisplay} from '../src/App';
+import {formatDigitsToDate,formatIsoToDisplay,parseAnyDateInput} from '../src/App';
 import {validDate} from '../shared/domain';
 
 describe('Datepicker input formatting and validation', () => {
@@ -52,5 +52,15 @@ describe('Datepicker input formatting and validation', () => {
     expect(formatIsoToDisplay('2026-10-15')).toBe('15/10/2026');
     expect(formatIsoToDisplay('2026-12-28')).toBe('28/12/2026');
     expect(formatIsoToDisplay('')).toBe('');
+  });
+
+  it('mendukung parsing ISO YYYY-MM-DD dari automated tests / Playwright .fill()', () => {
+    const res = parseAnyDateInput('2026-11-16');
+    expect(res.formatted).toBe('16/11/2026');
+    expect(res.iso).toBe('2026-11-16');
+
+    const res2 = parseAnyDateInput('16/11/2026');
+    expect(res2.formatted).toBe('16/11/2026');
+    expect(res2.iso).toBe('2026-11-16');
   });
 });

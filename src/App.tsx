@@ -423,11 +423,57 @@ function RequestList({requests,month,sdm,onSelect,onDraft,userId}:any){
 }
 function CalendarView({data,month,setMonth,onSelect}:any){const {positions:POSITIONS,positionLabel}=useDirectory();const [position,setPosition]=useState('ALL');const days=monthDays(month);const offset=(new Date(month+'-01T00:00:00').getDay()+6)%7;const entries=data.calendar.filter((r:any)=>position==='ALL'||r.position===position);return <><section className="panel calendar-panel"><div className="panel-heading"><div className="calendar-heading"><button className="icon-button" aria-label="Bulan sebelumnya" onClick={()=>setMonth(addMonths(month+'-01',-1).slice(0,7))}><ChevronLeft size={18}/></button><h2>{monthLabel(month)}</h2><button className="icon-button" aria-label="Bulan berikutnya" onClick={()=>setMonth(addMonths(month+'-01',1).slice(0,7))}><ChevronRight size={18}/></button></div><select aria-label="Filter posisi kalender" value={position} onChange={e=>setPosition(e.target.value)}><option value="ALL">Semua posisi</option>{data.quotas.map((q:Quota)=><option key={q.position} value={q.position}>{q.label}</option>)}</select></div><div className="calendar-scroll"><div className="calendar-grid">{['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d=><div className="weekday" key={d}>{d}</div>)}{Array.from({length:offset},(_,i)=><div className="day outside" key={'o'+i}/>)}{days.map(d=>{const blocked=data.blocked.includes(d);const off=!isWorking(d,data.calendarConfig);return <div key={d} className={'day '+(blocked?'blocked ':'')+(off?'off ':'')+(d===data.today?'current':'')}><div className="day-number">{Number(d.slice(-2))}{blocked&&<small>H-3</small>}</div>{data.calendarConfig.exceptions[d]&&<small className="holiday-label">{data.calendarConfig.exceptions[d].label}</small>}{entries.filter((r:any)=>r.days.includes(d)).map((r:any,i:number)=><button disabled={!r.id} key={r.id+'-'+i} onClick={()=>onSelect(r.id)} className={'calendar-event '+(r.status==='APPROVED'?'approved':'pending')}><span>{r.name}</span><small>{(r.positionName??positionLabel(r.position))} · {r.status==='APPROVED'?'Disetujui':'Menunggu'}</small></button>)}</div>;})}</div></div><div className="legend calendar-legend"><span><i className="teal-dot"/>Disetujui</span><span><i className="orange-dot"/>Menunggu review</span><span><i className="blocked-dot"/>3 hari kerja terakhir</span><span>Kalender kerja unit: Senin–Jumat + pengecualian admin</span></div></section><section className="panel all-quotas"><div className="panel-heading"><h2>Kapasitas posisi bulan ini</h2><span className="muted">Terpakai / kuota orang</span></div><div className="quota-cards">{data.quotas.map((q:Quota)=><div key={q.position}><strong>{q.label}</strong><span>{q.used}<small> / {q.limit}</small></span><p>{q.available} orang tersedia</p></div>)}</div></section></>;}
 
+export function parseAnyDateInput(raw: string): { formatted: string; iso: string | null } {
+  const text = raw.trim();
+  if (!text) {
+    return { formatted: '', iso: null };
+  }
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    const iso = `${y}-${m}-${d}`;
+    return {
+      formatted: `${d}/${m}/${y}`,
+      iso: validDate(iso) ? iso : null,
+    };
+  }
+
+  const slashMatch = text.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (slashMatch) {
+    const [, dRaw, mRaw, y] = slashMatch;
+    const d = dRaw.padStart(2, '0');
+    const m = mRaw.padStart(2, '0');
+    const iso = `${y}-${m}-${d}`;
+    return {
+      formatted: `${d}/${m}/${y}`,
+      iso: validDate(iso) ? iso : null,
+    };
+  }
+
+  const clean = text.replace(/\D/g, '').slice(0, 8);
+  let formatted = clean;
+  if (clean.length > 4) {
+    formatted = `${clean.slice(0, 2)}/${clean.slice(2, 4)}/${clean.slice(4)}`;
+  } else if (clean.length > 2) {
+    formatted = `${clean.slice(0, 2)}/${clean.slice(2)}`;
+  }
+
+  let iso: string | null = null;
+  if (clean.length === 8) {
+    const d = clean.slice(0, 2);
+    const m = clean.slice(2, 4);
+    const y = clean.slice(4, 8);
+    const candidate = `${y}-${m}-${d}`;
+    if (validDate(candidate)) {
+      iso = candidate;
+    }
+  }
+
+  return { formatted, iso };
+}
+
 export function formatDigitsToDate(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+  return parseAnyDateInput(raw).formatted;
 }
 
 export function formatIsoToDisplay(val: string): string {
@@ -513,24 +559,6 @@ function DatePicker({
   const prevMonth = () => setViewMonth(m => addMonths(m + '-01', -1).slice(0, 7));
   const nextMonth = () => setViewMonth(m => addMonths(m + '-01', 1).slice(0, 7));
 
-  const commitDateIfValid = (formatted: string) => {
-    const clean = formatted.replace(/\D/g, '');
-    if (!clean) {
-      if (value) onChange('');
-      return;
-    }
-    if (clean.length === 8) {
-      const d = clean.slice(0, 2);
-      const m = clean.slice(2, 4);
-      const y = clean.slice(4, 8);
-      const iso = `${y}-${m}-${d}`;
-      if (validDate(iso)) {
-        onChange(iso);
-        setViewMonth(iso.slice(0, 7));
-      }
-    }
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (
       e.ctrlKey ||
@@ -556,9 +584,13 @@ function DatePicker({
           if (curVal[selectionStart - 1] === '/') {
             e.preventDefault();
             const nextVal = curVal.slice(0, selectionStart - 2) + curVal.slice(selectionStart);
-            const formatted = formatDigitsToDate(nextVal);
+            const { formatted, iso } = parseAnyDateInput(nextVal);
             setInputValue(formatted);
-            commitDateIfValid(formatted);
+            if (!formatted && value) onChange('');
+            else if (iso) {
+              onChange(iso);
+              setViewMonth(iso.slice(0, 7));
+            }
             requestAnimationFrame(() => {
               const newPos = Math.max(0, selectionStart - 2);
               target.setSelectionRange(newPos, newPos);
@@ -577,42 +609,37 @@ function DatePicker({
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     const pasted = e.clipboardData.getData('text');
-    let digits = '';
-    const isoMatch = pasted.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    const slashMatch = pasted.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
-    if (isoMatch) {
-      const [, y, m, d] = isoMatch;
-      digits = `${d}${m}${y}`;
-    } else if (slashMatch) {
-      const [, d, m, y] = slashMatch;
-      digits = `${d.padStart(2, '0')}${m.padStart(2, '0')}${y}`;
-    } else {
-      digits = pasted.replace(/\D/g, '').slice(0, 8);
-    }
-    const formatted = formatDigitsToDate(digits);
+    const { formatted, iso } = parseAnyDateInput(pasted);
     setInputValue(formatted);
-    commitDateIfValid(formatted);
+    if (!formatted) {
+      if (value) onChange('');
+    } else if (iso) {
+      onChange(iso);
+      setViewMonth(iso.slice(0, 7));
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formatted = formatDigitsToDate(e.target.value);
+    const { formatted, iso } = parseAnyDateInput(e.target.value);
     setInputValue(formatted);
-    commitDateIfValid(formatted);
+    if (!formatted) {
+      if (value) onChange('');
+    } else if (iso) {
+      onChange(iso);
+      setViewMonth(iso.slice(0, 7));
+    }
   };
 
   const handleBlur = () => {
-    const clean = inputValue.replace(/\D/g, '');
-    if (clean.length === 8) {
-      const d = clean.slice(0, 2);
-      const m = clean.slice(2, 4);
-      const y = clean.slice(4, 8);
-      const iso = `${y}-${m}-${d}`;
-      if (validDate(iso)) {
-        onChange(iso);
-        return;
-      }
-    } else if (clean.length === 0) {
+    const { formatted, iso } = parseAnyDateInput(inputValue);
+    if (iso) {
+      onChange(iso);
+      setInputValue(formatted);
+      return;
+    }
+    if (!inputValue.replace(/\D/g, '')) {
       if (value) onChange('');
+      setInputValue('');
       return;
     }
     setInputValue(formatIsoToDisplay(value));
