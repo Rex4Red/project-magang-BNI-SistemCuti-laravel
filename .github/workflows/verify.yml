@@ -1,6 +1,17 @@
-name: Verify Laravel migration
+name: Verify and deploy Laravel
 
-on: [push, pull_request]
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bni-cuti-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   verify:
@@ -50,3 +61,45 @@ jobs:
         with:
           name: browser-test-results
           path: test-results/
+
+  publish:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_mysql, gd, zip, intl
+          tools: composer:v2
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: composer install --no-dev --no-scripts --no-interaction --prefer-dist --optimize-autoloader
+      - run: composer check-platform-reqs --no-dev
+      - run: npm ci && npm run build
+      - run: php scripts/build-release.php "$GITHUB_SHA"
+      - name: Publish tested production package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)"
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "A newer commit exists; skip publishing this older build."
+            exit 0
+          fi
+          tag="deploy-$GITHUB_SHA"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "This commit already has a release."
+            exit 0
+          fi
+          gh release create "$tag" --draft --target "$GITHUB_SHA" --title "Deploy ${GITHUB_SHA:0:7}" --notes "Production package built after all checks passed."
+          gh release upload "$tag" .runtime/release/bni-cuti-release.zip .runtime/release/release.json
+          gh release edit "$tag" --draft=false --latest

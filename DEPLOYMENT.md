@@ -99,3 +99,38 @@ Periksa setelah upload:
 7. File .env dan source privat tidak dapat diakses dari web.
 
 Backup mencakup database serta .env/APP_KEY secara privat. Uji pemulihannya sebelum pemakaian operasional dan buat backup lagi sebelum memperbarui source atau migration.
+
+## Deploy otomatis dari GitHub
+
+Workflow `Verify and deploy Laravel` menguji setiap push dan pull request. Setelah semua pemeriksaan berhasil untuk branch `main`, job `publish` membuat rilis `deploy-<commit>` berisi source PHP, dependensi produksi, dan hasil build frontend. Pull request dan branch lain tidak menerbitkan paket deploy. Paket tidak menyertakan `.env`, storage, database lokal, atau cache konfigurasi.
+
+Hosting mengambil manifest rilis setiap dua menit melalui cron PHP, tanpa menyimpan password cPanel di GitHub. Paket diperiksa checksum, struktur, dan commit-nya sebelum diekstrak ke direktori rilis baru. `.env` dan storage ditautkan ke lokasi bersama yang tetap. Migration yang belum dijalankan didahului backup SQL privat; tidak ada seeding atau reset database saat deploy.
+
+Susunan instalasi pada hosting uji:
+
+~~~text
+/home/yyuyabzu/cuti-deploy/
+  config.json                  # Konfigurasi privat hosting
+  deploy-release.php           # Salinan scripts/deploy-release.php
+  ReleasePackage.php           # Salinan scripts/ReleasePackage.php
+  current -> releases/<versi>  # Versi aktif
+  releases/                   # Paket lengkap per versi
+  backups/                    # Backup SQL sebelum migration
+  state.json                  # Commit aktif dan versi sebelumnya
+  deploy.log                  # Hasil deploy
+~~~
+
+Document root subdomain diarahkan ke `cuti-deploy/current/public`. Folder `.env` dan storage lama tetap berada di `/home/yyuyabzu/sistemcuti.bgskr.my.id/`; source lama dipertahankan sebagai cadangan awal. Cron email harus memakai `cuti-deploy/current/artisan` agar mengikuti kode aktif. Hosting ini membatasi `proc_open`, sehingga cron email memanggil `cuti:mail` secara langsung.
+
+`config.json` memakai field `repository`, `base`, `environment`, `storage`, `initial`, dan `url`. Nilai repository adalah `Rex4Red/project-magang-BNI-SistemCuti-laravel`. Field `initial` menunjuk project lama untuk menginisialisasi symlink sebelum document root dipindahkan. Jalankan `php deploy-release.php config.json --initialize` sekali, kemudian pasang cron pada Linux dengan ekstensi cURL dan Zip serta symlink yang didukung hosting:
+
+~~~cron
+*/2 * * * * /opt/cpanel/ea-php83/root/usr/bin/php /home/yyuyabzu/cuti-deploy/deploy-release.php /home/yyuyabzu/cuti-deploy/config.json >> /home/yyuyabzu/cuti-deploy/deploy.log 2>&1
+* * * * * /opt/cpanel/ea-php83/root/usr/bin/php /home/yyuyabzu/cuti-deploy/current/artisan cuti:mail --limit=20 >> /home/yyuyabzu/sistemcuti.bgskr.my.id/storage/logs/cron.log 2>&1
+~~~
+
+Versi baru diaktifkan dengan mengganti symlink setelah persiapan selesai. Pemeriksaan HTTP harus mendapatkan commit yang benar di `/deployment.json` dan hasil sehat di `/api/health`. Jika gagal, kode otomatis kembali ke versi sebelumnya. Perubahan database tidak dibatalkan otomatis: gunakan migration yang tetap cocok dengan versi aplikasi sebelumnya; backup SQL tersedia untuk pemulihan terencana.
+
+Rilis yang gagal ditandai dalam `failed.json` supaya cron tidak mengulangi migration yang gagal setiap dua menit. Push perbaikan dengan commit baru untuk mencoba rilis berikutnya; untuk mengulang commit yang sama setelah memperbaiki penyebabnya, hapus penanda tersebut melalui File Manager. Skrip deploy berada di luar document root dan hanya dijalankan melalui CLI. Jika skrip deploy sendiri diubah di repository, perbarui salinan privatnya di hosting juga.
+
+Status pengujian dan pembuatan rilis tersedia di tab Actions GitHub. Setelah berhasil, hosting biasanya memperbarui website dalam dua menit berikutnya; waktu pengujian dan build ditambahkan sebelum itu.
