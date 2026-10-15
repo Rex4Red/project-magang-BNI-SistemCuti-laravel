@@ -613,7 +613,7 @@ function DatePicker({
     setInputValue(formatted);
     if (!formatted) {
       if (value) onChange('');
-    } else if (iso) {
+    } else if (iso && iso !== value) {
       onChange(iso);
       setViewMonth(iso.slice(0, 7));
     }
@@ -624,7 +624,7 @@ function DatePicker({
     setInputValue(formatted);
     if (!formatted) {
       if (value) onChange('');
-    } else if (iso) {
+    } else if (iso && iso !== value) {
       onChange(iso);
       setViewMonth(iso.slice(0, 7));
     }
@@ -633,7 +633,9 @@ function DatePicker({
   const handleBlur = () => {
     const { formatted, iso } = parseAnyDateInput(inputValue);
     if (iso) {
-      onChange(iso);
+      if (iso !== value) {
+        onChange(iso);
+      }
       setInputValue(formatted);
       return;
     }
