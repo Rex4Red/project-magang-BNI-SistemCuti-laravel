@@ -56,24 +56,27 @@ function backupBeforeMigrations(PDO $connection, string $path): void
     }
     chmod($path, 0600);
     $quoteTable = fn (string $table): string => '`'.str_replace('`', '``', $table).'`';
+    $write = function (string $content) use ($file): void {
+        if (fwrite($file, $content) !== strlen($content)) {
+            throw new RuntimeException('Database backup could not be written completely.');
+        }
+    };
     try {
         $connection->beginTransaction();
-        fwrite($file, "SET FOREIGN_KEY_CHECKS=0;\n");
+        $write("SET FOREIGN_KEY_CHECKS=0;\n");
         $tables = $connection->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")->fetchAll(PDO::FETCH_COLUMN);
         foreach ($tables as $table) {
             $name = $quoteTable($table);
             $schema = $connection->query('SHOW CREATE TABLE '.$name)->fetch(PDO::FETCH_NUM);
-            fwrite($file, 'DROP TABLE IF EXISTS '.$name.";\n".$schema[1].";\n");
+            $write('DROP TABLE IF EXISTS '.$name.";\n".$schema[1].";\n");
             $rows = $connection->query('SELECT * FROM '.$name);
             while ($row = $rows->fetch(PDO::FETCH_ASSOC)) {
                 $columns = implode(',', array_map($quoteTable, array_keys($row)));
                 $values = implode(',', array_map(fn ($value): string => $value === null ? 'NULL' : $connection->quote((string) $value), array_values($row)));
-                if (fwrite($file, 'INSERT INTO '.$name.' ('.$columns.') VALUES ('.$values.");\n") === false) {
-                    throw new RuntimeException('Database backup could not be written.');
-                }
+                $write('INSERT INTO '.$name.' ('.$columns.') VALUES ('.$values.");\n");
             }
         }
-        fwrite($file, "SET FOREIGN_KEY_CHECKS=1;\n");
+        $write("SET FOREIGN_KEY_CHECKS=1;\n");
         $connection->commit();
     } catch (Throwable $error) {
         if ($connection->inTransaction()) {

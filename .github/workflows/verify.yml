@@ -96,10 +96,13 @@ jobs:
             exit 0
           fi
           tag="deploy-$GITHUB_SHA"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "This commit already has a release."
-            exit 0
+          if draft="$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$draft" = "false" ]; then
+              echo "This commit already has a published release."
+              exit 0
+            fi
+          else
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "Deploy ${GITHUB_SHA:0:7}" --notes "Production package built after all checks passed."
           fi
-          gh release create "$tag" --draft --target "$GITHUB_SHA" --title "Deploy ${GITHUB_SHA:0:7}" --notes "Production package built after all checks passed."
-          gh release upload "$tag" .runtime/release/bni-cuti-release.zip .runtime/release/release.json
+          gh release upload "$tag" .runtime/release/bni-cuti-release.zip .runtime/release/release.json --clobber
           gh release edit "$tag" --draft=false --latest
