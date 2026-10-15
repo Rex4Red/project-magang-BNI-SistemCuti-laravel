@@ -23,7 +23,7 @@ class DeploymentPackageTest extends TestCase
         parent::setUp();
         $this->root = sys_get_temp_dir().'/cuti-deploy-test-'.bin2hex(random_bytes(6));
         $this->commit = str_repeat('a', 40);
-        foreach (['app', 'bootstrap/cache', 'config', 'database/migrations', 'public/build', 'resources', 'routes', 'vendor', 'storage/logs'] as $path) {
+        foreach (['app', 'bootstrap/cache', 'config', 'database/migrations', 'database/data', 'public/build', 'resources', 'routes', 'vendor', 'storage/logs'] as $path) {
             mkdir($this->root.'/'.$path, 0755, true);
         }
         foreach (['artisan', 'composer.json', 'composer.lock', 'vendor/autoload.php', 'bootstrap/app.php', 'public/index.php', 'public/build/index.html'] as $file) {
@@ -33,6 +33,7 @@ class DeploymentPackageTest extends TestCase
         file_put_contents($this->root.'/database/private.sqlite', 'PRIVATE_EMPLOYEE_DATA');
         file_put_contents($this->root.'/bootstrap/cache/config.php', 'PRIVATE_CACHED_PASSWORD');
         file_put_contents($this->root.'/storage/logs/laravel.log', 'PRIVATE_LOG_DATA');
+        copy(dirname(__DIR__, 2).'/database/data/cuti-defaults.json', $this->root.'/database/data/cuti-defaults.json');
     }
 
     protected function tearDown(): void
@@ -62,6 +63,7 @@ class DeploymentPackageTest extends TestCase
             $this->assertFalse($zip->locateName($private));
         }
         $this->assertSame($this->commit, json_decode($zip->getFromName('public/deployment.json'), true)['commit']);
+        $this->assertIsArray(json_decode($zip->getFromName('database/data/cuti-defaults.json'), true)['calendar']);
         $zip->getExternalAttributesName('vendor/', $system, $attributes);
         $this->assertSame(0755, ($attributes >> 16) & 0777);
         $zip->close();

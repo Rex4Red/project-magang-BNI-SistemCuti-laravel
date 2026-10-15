@@ -32,6 +32,9 @@ final class ReleasePackage
                 return false;
             }
         }
+        if ($path === 'database/data/' || $path === 'database/data/cuti-defaults.json') {
+            return true;
+        }
         if ($parts[0] === 'database' && count($parts) > 1 && ! in_array($parts[1], ['migrations', 'seeders', 'factories', '.gitignore'], true)) {
             return false;
         }
@@ -107,7 +110,7 @@ final class ReleasePackage
                     throw new RuntimeException('Unsafe release archive entry.');
                 }
             }
-            foreach (['vendor/autoload.php', 'bootstrap/app.php', 'artisan', 'composer.lock', 'public/index.php', 'public/build/index.html'] as $required) {
+            foreach (['vendor/autoload.php', 'bootstrap/app.php', 'artisan', 'composer.lock', 'database/data/cuti-defaults.json', 'public/index.php', 'public/build/index.html'] as $required) {
                 if ($zip->locateName($required) === false) {
                     throw new RuntimeException('Incomplete release: '.$required);
                 }
