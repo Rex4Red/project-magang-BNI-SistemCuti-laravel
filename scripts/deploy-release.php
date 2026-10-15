@@ -28,6 +28,7 @@ function downloadReleaseFile(string $url, string $path, int $maximum): void
         CURLOPT_CONNECTTIMEOUT => 15,
         CURLOPT_TIMEOUT => 120,
         CURLOPT_USERAGENT => 'BNI-Cuti-AutoDeploy/1',
+        CURLOPT_HTTPHEADER => ['Cache-Control: no-cache'],
         CURLOPT_WRITEFUNCTION => function ($handle, string $chunk) use ($file, $maximum, &$bytes): int {
             $bytes += strlen($chunk);
             if ($bytes > $maximum) {
@@ -112,7 +113,7 @@ if ($lock === false || ! flock($lock, LOCK_EX | LOCK_NB)) {
 $commit = null;
 $installing = false;
 try {
-    downloadReleaseFile('https://github.com/'.$repository.'/releases/latest/download/release.json', $base.'/release.download.json', 16000);
+    downloadReleaseFile('https://github.com/'.$repository.'/releases/latest/download/release.json?check='.time(), $base.'/release.download.json', 16000);
     $manifest = json_decode(file_get_contents($base.'/release.download.json'), true, 512, JSON_THROW_ON_ERROR);
     $commit = $manifest['commit'] ?? '';
     if (($manifest['format'] ?? null) !== 1 || ! preg_match('/^[a-f0-9]{40}$/', $commit) || ! preg_match('/^[a-f0-9]{64}$/', $manifest['sha256'] ?? '') || ($manifest['url'] ?? '') !== 'https://github.com/'.$repository.'/releases/download/deploy-'.$commit.'/bni-cuti-release.zip') {
