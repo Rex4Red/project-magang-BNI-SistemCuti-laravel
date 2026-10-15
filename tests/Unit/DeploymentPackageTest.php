@@ -26,7 +26,7 @@ class DeploymentPackageTest extends TestCase
         foreach (['app', 'bootstrap/cache', 'config', 'database/migrations', 'public/build', 'resources', 'routes', 'vendor', 'storage/logs'] as $path) {
             mkdir($this->root.'/'.$path, 0755, true);
         }
-        foreach (['artisan', 'composer.json', 'composer.lock', 'vendor/autoload.php', 'bootstrap/app.php', 'public/index.php', 'public/build/manifest.json'] as $file) {
+        foreach (['artisan', 'composer.json', 'composer.lock', 'vendor/autoload.php', 'bootstrap/app.php', 'public/index.php', 'public/build/index.html'] as $file) {
             file_put_contents($this->root.'/'.$file, '{}');
         }
         file_put_contents($this->root.'/.env', 'PRIVATE_DATABASE_PASSWORD');
@@ -105,6 +105,13 @@ class DeploymentPackageTest extends TestCase
     {
         $this->expectExceptionMessage('Release commit does not match its manifest.');
         ReleasePackage::extract($this->archive(), $this->root.'/extracted', str_repeat('b', 40));
+    }
+
+    public function test_build_rejects_a_missing_frontend_before_a_release_can_be_published(): void
+    {
+        unlink($this->root.'/public/build/index.html');
+        $this->expectExceptionMessage('Incomplete release: public/build/index.html');
+        $this->archive();
     }
 
     private function initializeCurrent(): string

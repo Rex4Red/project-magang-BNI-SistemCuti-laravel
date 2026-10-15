@@ -81,11 +81,13 @@ final class ReleasePackage
         if (! $zip->close()) {
             throw new RuntimeException('Cannot finish release archive.');
         }
+        $verified = self::openValidated($target, $commit);
+        $verified->close();
 
         return $target;
     }
 
-    public static function extract(string $archive, string $destination, string $commit): void
+    private static function openValidated(string $archive, string $commit): ZipArchive
     {
         self::commit($commit);
         $zip = new ZipArchive;
@@ -105,7 +107,7 @@ final class ReleasePackage
                     throw new RuntimeException('Unsafe release archive entry.');
                 }
             }
-            foreach (['vendor/autoload.php', 'bootstrap/app.php', 'artisan', 'composer.lock', 'public/index.php', 'public/build/manifest.json'] as $required) {
+            foreach (['vendor/autoload.php', 'bootstrap/app.php', 'artisan', 'composer.lock', 'public/index.php', 'public/build/index.html'] as $required) {
                 if ($zip->locateName($required) === false) {
                     throw new RuntimeException('Incomplete release: '.$required);
                 }
@@ -114,6 +116,18 @@ final class ReleasePackage
             if (($version['commit'] ?? null) !== $commit) {
                 throw new RuntimeException('Release commit does not match its manifest.');
             }
+
+            return $zip;
+        } catch (Throwable $error) {
+            $zip->close();
+            throw $error;
+        }
+    }
+
+    public static function extract(string $archive, string $destination, string $commit): void
+    {
+        $zip = self::openValidated($archive, $commit);
+        try {
             self::directory($destination);
             if (! $zip->extractTo($destination)) {
                 throw new RuntimeException('Cannot extract release.');
