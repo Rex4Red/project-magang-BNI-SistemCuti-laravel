@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
 import {ArrowDownToLine,ArrowRight,ArrowUpRight,Bell,CalendarDays,Check,CheckCheck,ChevronDown,ChevronLeft,ChevronRight,Clock,Clock3,FileSpreadsheet,FileText,Home,Info,LayoutGrid,LogOut,Menu,Plus,Search,Settings2,ShieldCheck,Users,X,Mail,Send,BriefcaseBusiness,CheckCircle2,AlertCircle,SlidersHorizontal,Leaf,Save,Phone,MessageCircle,MessageSquare,Copy,RotateCcw,XCircle,UserCheck,Printer,BarChart3} from 'lucide-react';
-import {ACTIVE,PASSWORD_PATTERN,PASSWORD_HINT,POSITIONS,addMonths,dateOnly,isWorking,monthDays,positionLabel,statusLabel,calculateMaxEndDate,getValidEndDates,blockedDays,type Employee,type Leave,type LeaveInput,type Preview,type Quota} from '../shared/domain';
+import {ACTIVE,PASSWORD_PATTERN,PASSWORD_HINT,POSITIONS,addMonths,dateOnly,isWorking,monthDays,positionLabel,statusLabel,calculateMaxEndDate,getValidEndDates,blockedDays,validDate,type Employee,type Leave,type LeaveInput,type Preview,type Quota} from '../shared/domain';
 import {api,action,ApiError} from './api';
 import {DirectoryContext,useDirectory} from './DirectoryContext';
 import {ReplacementAdmin} from './ReplacementAdmin';
@@ -423,126 +423,416 @@ function RequestList({requests,month,sdm,onSelect,onDraft,userId}:any){
 }
 function CalendarView({data,month,setMonth,onSelect}:any){const {positions:POSITIONS,positionLabel}=useDirectory();const [position,setPosition]=useState('ALL');const days=monthDays(month);const offset=(new Date(month+'-01T00:00:00').getDay()+6)%7;const entries=data.calendar.filter((r:any)=>position==='ALL'||r.position===position);return <><section className="panel calendar-panel"><div className="panel-heading"><div className="calendar-heading"><button className="icon-button" aria-label="Bulan sebelumnya" onClick={()=>setMonth(addMonths(month+'-01',-1).slice(0,7))}><ChevronLeft size={18}/></button><h2>{monthLabel(month)}</h2><button className="icon-button" aria-label="Bulan berikutnya" onClick={()=>setMonth(addMonths(month+'-01',1).slice(0,7))}><ChevronRight size={18}/></button></div><select aria-label="Filter posisi kalender" value={position} onChange={e=>setPosition(e.target.value)}><option value="ALL">Semua posisi</option>{data.quotas.map((q:Quota)=><option key={q.position} value={q.position}>{q.label}</option>)}</select></div><div className="calendar-scroll"><div className="calendar-grid">{['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d=><div className="weekday" key={d}>{d}</div>)}{Array.from({length:offset},(_,i)=><div className="day outside" key={'o'+i}/>)}{days.map(d=>{const blocked=data.blocked.includes(d);const off=!isWorking(d,data.calendarConfig);return <div key={d} className={'day '+(blocked?'blocked ':'')+(off?'off ':'')+(d===data.today?'current':'')}><div className="day-number">{Number(d.slice(-2))}{blocked&&<small>H-3</small>}</div>{data.calendarConfig.exceptions[d]&&<small className="holiday-label">{data.calendarConfig.exceptions[d].label}</small>}{entries.filter((r:any)=>r.days.includes(d)).map((r:any,i:number)=><button disabled={!r.id} key={r.id+'-'+i} onClick={()=>onSelect(r.id)} className={'calendar-event '+(r.status==='APPROVED'?'approved':'pending')}><span>{r.name}</span><small>{(r.positionName??positionLabel(r.position))} · {r.status==='APPROVED'?'Disetujui':'Menunggu'}</small></button>)}</div>;})}</div></div><div className="legend calendar-legend"><span><i className="teal-dot"/>Disetujui</span><span><i className="orange-dot"/>Menunggu review</span><span><i className="blocked-dot"/>3 hari kerja terakhir</span><span>Kalender kerja unit: Senin–Jumat + pengecualian admin</span></div></section><section className="panel all-quotas"><div className="panel-heading"><h2>Kapasitas posisi bulan ini</h2><span className="muted">Terpakai / kuota orang</span></div><div className="quota-cards">{data.quotas.map((q:Quota)=><div key={q.position}><strong>{q.label}</strong><span>{q.used}<small> / {q.limit}</small></span><p>{q.available} orang tersedia</p></div>)}</div></section></>;}
 
-function DatePicker({label,value,onChange,min,max,calendar,validDates,disabled=false,disableNonWorking=false,blockMonthEnd=false,placeholder='Pilih tanggal'}:{label:string;value:string;onChange:(val:string)=>void;min?:string;max?:string;calendar?:any;validDates?:string[];disabled?:boolean;disableNonWorking?:boolean;blockMonthEnd?:boolean;placeholder?:string}){
-  const containerRef=useRef<HTMLDivElement>(null);
-  const [open,setOpen]=useState(false);
-  const initialMonth=value&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value.slice(0,7):(min&&/^\d{4}-\d{2}-\d{2}$/.test(min)?min.slice(0,7):dateOnly().slice(0,7));
-  const [viewMonth,setViewMonth]=useState(initialMonth);
-  useEffect(()=>{
-    if(value&&/^\d{4}-\d{2}-\d{2}$/.test(value)){setViewMonth(value.slice(0,7));}
-    else if(min&&/^\d{4}-\d{2}-\d{2}$/.test(min)){setViewMonth(min.slice(0,7));}
-  },[value,min]);
-  useEffect(()=>{
-    if(!open)return;
-    const onDocClick=(e:MouseEvent)=>{if(containerRef.current&&!containerRef.current.contains(e.target as Node)){setOpen(false);}};
-    const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')setOpen(false);};
-    document.addEventListener('mousedown',onDocClick);
-    document.addEventListener('keydown',onKey);
-    return()=>{document.removeEventListener('mousedown',onDocClick);document.removeEventListener('keydown',onKey);};
-  },[open]);
-  const prevMonth=()=>setViewMonth(m=>addMonths(m+'-01',-1).slice(0,7));
-  const nextMonth=()=>setViewMonth(m=>addMonths(m+'-01',1).slice(0,7));
-  const displayValue=value?(/^\d{4}-\d{2}-\d{2}$/.test(value)?`${value.slice(8,10)}/${value.slice(5,7)}/${value.slice(0,4)}`:value):'';
-  const handleInputChange=(e:React.ChangeEvent<HTMLInputElement>)=>{
-    const text=e.target.value.trim();
-    if(!text){onChange('');return;}
-    if(/^\d{4}-\d{2}-\d{2}$/.test(text)){onChange(text);return;}
-    const match=text.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
-    if(match){const [,d,mo,y]=match;onChange(`${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`);return;}
-    onChange(text);
+export function formatDigitsToDate(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+export function formatIsoToDisplay(val: string): string {
+  if (!val) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    return `${val.slice(8, 10)}/${val.slice(5, 7)}/${val.slice(0, 4)}`;
+  }
+  return val;
+}
+
+function DatePicker({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  calendar,
+  validDates,
+  disabled = false,
+  disableNonWorking = false,
+  blockMonthEnd = false,
+  placeholder = 'dd/mm/yyyy',
+}: {
+  label: string;
+  value: string;
+  onChange: (val: string) => void;
+  min?: string;
+  max?: string;
+  calendar?: any;
+  validDates?: string[];
+  disabled?: boolean;
+  disableNonWorking?: boolean;
+  blockMonthEnd?: boolean;
+  placeholder?: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [inputValue, setInputValue] = useState(() => formatIsoToDisplay(value));
+
+  const initialMonth =
+    value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? value.slice(0, 7)
+      : min && /^\d{4}-\d{2}-\d{2}$/.test(min)
+      ? min.slice(0, 7)
+      : dateOnly().slice(0, 7);
+  const [viewMonth, setViewMonth] = useState(initialMonth);
+
+  useEffect(() => {
+    setInputValue(formatIsoToDisplay(value));
+    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      setViewMonth(value.slice(0, 7));
+    } else if (min && /^\d{4}-\d{2}-\d{2}$/.test(min)) {
+      setViewMonth(min.slice(0, 7));
+    }
+  }, [value, min]);
+
+  useEffect(() => {
+    if (!open) return;
+    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 760;
+    const prevOverflow = document.body.style.overflow;
+    if (isMobile) {
+      document.body.style.overflow = 'hidden';
+    }
+    const onDocClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      if (isMobile) {
+        document.body.style.overflow = prevOverflow;
+      }
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const prevMonth = () => setViewMonth(m => addMonths(m + '-01', -1).slice(0, 7));
+  const nextMonth = () => setViewMonth(m => addMonths(m + '-01', 1).slice(0, 7));
+
+  const commitDateIfValid = (formatted: string) => {
+    const clean = formatted.replace(/\D/g, '');
+    if (!clean) {
+      if (value) onChange('');
+      return;
+    }
+    if (clean.length === 8) {
+      const d = clean.slice(0, 2);
+      const m = clean.slice(2, 4);
+      const y = clean.slice(4, 8);
+      const iso = `${y}-${m}-${d}`;
+      if (validDate(iso)) {
+        onChange(iso);
+        setViewMonth(iso.slice(0, 7));
+      }
+    }
   };
-  const days=monthDays(viewMonth);
-  const blockedDates=blockMonthEnd&&calendar?blockedDays(viewMonth,calendar):[];
-  const firstDayOfWeek=new Date(viewMonth+'-01T00:00:00Z').getUTCDay();
-  const weekdays=['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (
+      e.ctrlKey ||
+      e.metaKey ||
+      [
+        'Backspace',
+        'Delete',
+        'Tab',
+        'ArrowLeft',
+        'ArrowRight',
+        'ArrowUp',
+        'ArrowDown',
+        'Home',
+        'End',
+        'Enter',
+        'Escape',
+      ].includes(e.key)
+    ) {
+      if (e.key === 'Backspace') {
+        const target = e.currentTarget;
+        const { selectionStart, selectionEnd, value: curVal } = target;
+        if (selectionStart === selectionEnd && selectionStart !== null && selectionStart > 0) {
+          if (curVal[selectionStart - 1] === '/') {
+            e.preventDefault();
+            const nextVal = curVal.slice(0, selectionStart - 2) + curVal.slice(selectionStart);
+            const formatted = formatDigitsToDate(nextVal);
+            setInputValue(formatted);
+            commitDateIfValid(formatted);
+            requestAnimationFrame(() => {
+              const newPos = Math.max(0, selectionStart - 2);
+              target.setSelectionRange(newPos, newPos);
+            });
+            return;
+          }
+        }
+      }
+      return;
+    }
+    if (!/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text');
+    let digits = '';
+    const isoMatch = pasted.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const slashMatch = pasted.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+    if (isoMatch) {
+      const [, y, m, d] = isoMatch;
+      digits = `${d}${m}${y}`;
+    } else if (slashMatch) {
+      const [, d, m, y] = slashMatch;
+      digits = `${d.padStart(2, '0')}${m.padStart(2, '0')}${y}`;
+    } else {
+      digits = pasted.replace(/\D/g, '').slice(0, 8);
+    }
+    const formatted = formatDigitsToDate(digits);
+    setInputValue(formatted);
+    commitDateIfValid(formatted);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatDigitsToDate(e.target.value);
+    setInputValue(formatted);
+    commitDateIfValid(formatted);
+  };
+
+  const handleBlur = () => {
+    const clean = inputValue.replace(/\D/g, '');
+    if (clean.length === 8) {
+      const d = clean.slice(0, 2);
+      const m = clean.slice(2, 4);
+      const y = clean.slice(4, 8);
+      const iso = `${y}-${m}-${d}`;
+      if (validDate(iso)) {
+        onChange(iso);
+        return;
+      }
+    } else if (clean.length === 0) {
+      if (value) onChange('');
+      return;
+    }
+    setInputValue(formatIsoToDisplay(value));
+  };
+
+  const days = monthDays(viewMonth);
+  const blockedDates = blockMonthEnd && calendar ? blockedDays(viewMonth, calendar) : [];
+  const firstDayOfWeek = new Date(viewMonth + '-01T00:00:00Z').getUTCDay();
+  const weekdays = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+
   return (
     <div className="datepicker-wrap" ref={containerRef}>
       <div className="datepicker-input-box">
-        <input type="text" aria-label={label} value={displayValue} placeholder={placeholder} disabled={disabled} onChange={handleInputChange} onClick={()=>!disabled&&setOpen(o=>!o)}/>
-        <button type="button" tabIndex={-1} aria-label={'Buka kalender '+label} className="datepicker-btn" disabled={disabled} onClick={()=>!disabled&&setOpen(o=>!o)}><CalendarDays size={17}/></button>
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={10}
+          aria-label={label}
+          value={inputValue}
+          placeholder={placeholder}
+          disabled={disabled}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onChange={handleInputChange}
+          onBlur={handleBlur}
+          onClick={() => !disabled && setOpen(true)}
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={'Buka kalender ' + label}
+          className="datepicker-btn"
+          disabled={disabled}
+          onClick={() => !disabled && setOpen(o => !o)}
+        >
+          <CalendarDays size={17} />
+        </button>
       </div>
-      {open&&!disabled&&(
-        <div className="datepicker-popover" role="dialog" aria-label={'Pilih '+label}>
-          <div className="datepicker-head">
-            <button type="button" className="datepicker-nav" aria-label="Bulan sebelumnya" onClick={prevMonth}><ChevronLeft size={16}/></button>
-            <span className="datepicker-title">{monthLabel(viewMonth)}</span>
-            <button type="button" className="datepicker-nav" aria-label="Bulan berikutnya" onClick={nextMonth}><ChevronRight size={16}/></button>
-          </div>
-          <div className="datepicker-weekdays">
-            {weekdays.map((w,idx)=><span key={w} className={idx===0||idx===6?'col-weekend':''}>{w}</span>)}
-          </div>
-          <div className="datepicker-grid">
-            {Array.from({length:firstDayOfWeek}).map((_,i)=><div key={'pre-'+i} className="datepicker-cell outside"/>)}
-            {days.map(d=>{
-              const dayNum=Number(d.slice(-2));
-              const dow=(firstDayOfWeek+dayNum-1)%7;
-              const isWeekend=dow===0||dow===6;
-              const isHoliday=calendar?.exceptions?.[d]?.working===false;
-              const holidayLabel=calendar?.exceptions?.[d]?.label;
-              const isWork=calendar?isWorking(d,calendar):!isWeekend;
-              const isBeforeMin=Boolean(min&&d<min);
-              const isAfterMax=Boolean(max&&d>max);
-              const isBlocked=Boolean(blockedDates&&blockedDates.includes(d));
-              let selectable=false;
-              let tooltip='';
-              if(isBlocked){
-                tooltip='3 hari kerja terakhir bulan (H-3)';
-              }else if(validDates){
-                selectable=validDates.includes(d);
-                if(!selectable){
-                  if(isWeekend)tooltip=dow===6?'Sabtu (akhir pekan tidak dapat dipilih)':'Minggu (akhir pekan tidak dapat dipilih)';
-                  else if(isHoliday)tooltip=holidayLabel?`Hari libur: ${holidayLabel}`:'Hari libur tidak dapat dipilih';
-                  else if(isBeforeMin)tooltip='Sebelum tanggal mulai';
-                  else if(isAfterMax)tooltip='Melebihi batas maksimal 5 hari kerja';
-                  else tooltip='Bukan pilihan hari kerja yang diizinkan';
-                }
-              }else{
-                if(isBeforeMin)tooltip='Sebelum batas tanggal minimal';
-                else if(isAfterMax)tooltip='Melebihi batas tanggal maksimal';
-                else if(disableNonWorking&&!isWork){
-                  tooltip=isWeekend?(dow===6?'Sabtu (akhir pekan tidak dapat dipilih)':'Minggu (akhir pekan tidak dapat dipilih)'):(holidayLabel?`Hari libur: ${holidayLabel}`:'Hari libur tidak dapat dipilih');
-                }else{
-                  selectable=true;
-                }
-              }
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  disabled={!selectable}
-                  title={tooltip||undefined}
-                  className={'datepicker-cell'+(selectable?' selectable':' disabled')+(isWeekend?' weekend':'')+(isHoliday?' holiday':'')+(d===value&&selectable?' selected':'')}
-                  onClick={()=>{if(selectable){onChange(d);setOpen(false);}}}
-                >
-                  {dayNum}
-                </button>
-              );
-            })}
-          </div>
-          {validDates&&validDates.length>0&&(
-            <div className="datepicker-quick">
-              <div className="datepicker-quick-label">Pilihan hari kerja ({validDates.length} hari):</div>
-              <div className="datepicker-quick-pills">
-                {validDates.map((vd,i)=>(
-                  <button
-                    key={vd}
-                    type="button"
-                    className={'datepicker-pill'+(vd===value?' active':'')}
-                    onClick={()=>{onChange(vd);setOpen(false);}}
-                  >
-                    <span>{new Intl.DateTimeFormat('id-ID',{weekday:'short',day:'numeric',month:'short'}).format(new Date(vd+'T00:00:00'))}</span>
-                    <small>({i+1} hari)</small>
-                  </button>
-                ))}
+      {open && !disabled && (
+        <>
+          <div
+            className="datepicker-modal-backdrop"
+            onClick={() => setOpen(false)}
+            aria-hidden="true"
+          />
+          <div
+            className="datepicker-popover"
+            role="dialog"
+            aria-modal="true"
+            aria-label={'Pilih ' + label}
+          >
+            <div className="datepicker-mobile-bar">
+              <div className="datepicker-mobile-title">
+                <CalendarDays size={18} />
+                <span>{label}</span>
               </div>
+              <button
+                type="button"
+                className="datepicker-mobile-close"
+                aria-label="Tutup pemilih tanggal"
+                onClick={() => setOpen(false)}
+              >
+                <X size={18} />
+              </button>
             </div>
-          )}
-          <div className="datepicker-notice"><Info size={13}/><span>{blockMonthEnd?'Akhir pekan, hari libur, dan 3 hari kerja terakhir bulan tidak dapat dipilih.':'Sabtu, Minggu, dan hari libur tidak dapat dipilih.'}</span></div>
-          <div className="datepicker-foot">
-            {value?<button type="button" className="text-button" onClick={()=>{onChange('');setOpen(false);}}>Hapus</button>:<span/>}
-            <button type="button" className="button secondary" style={{minHeight:28,padding:'4px 10px',fontSize:11}} onClick={()=>setOpen(false)}>Tutup</button>
+            <div className="datepicker-mobile-input-row">
+              <label className="datepicker-mobile-input-label">
+                <span>Ketik tanggal manual (angka):</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={10}
+                  placeholder="dd/mm/yyyy"
+                  aria-label={'Ketik manual ' + label}
+                  value={inputValue}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  onChange={handleInputChange}
+                  onBlur={handleBlur}
+                  className="datepicker-mobile-text-input"
+                />
+              </label>
+            </div>
+            <div className="datepicker-head">
+              <button
+                type="button"
+                className="datepicker-nav"
+                aria-label="Bulan sebelumnya"
+                onClick={prevMonth}
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="datepicker-title">{monthLabel(viewMonth)}</span>
+              <button
+                type="button"
+                className="datepicker-nav"
+                aria-label="Bulan berikutnya"
+                onClick={nextMonth}
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+            <div className="datepicker-weekdays">
+              {weekdays.map((w, idx) => (
+                <span key={w} className={idx === 0 || idx === 6 ? 'col-weekend' : ''}>
+                  {w}
+                </span>
+              ))}
+            </div>
+            <div className="datepicker-grid">
+              {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+                <div key={'pre-' + i} className="datepicker-cell outside" />
+              ))}
+              {days.map(d => {
+                const dayNum = Number(d.slice(-2));
+                const dow = (firstDayOfWeek + dayNum - 1) % 7;
+                const isWeekend = dow === 0 || dow === 6;
+                const isHoliday = calendar?.exceptions?.[d]?.working === false;
+                const holidayLabel = calendar?.exceptions?.[d]?.label;
+                const isWork = calendar ? isWorking(d, calendar) : !isWeekend;
+                const isBeforeMin = Boolean(min && d < min);
+                const isAfterMax = Boolean(max && d > max);
+                const isBlocked = Boolean(blockedDates && blockedDates.includes(d));
+                let selectable = false;
+                let tooltip = '';
+                if (isBlocked) {
+                  tooltip = '3 hari kerja terakhir bulan (H-3)';
+                } else if (validDates) {
+                  selectable = validDates.includes(d);
+                  if (!selectable) {
+                    if (isWeekend) tooltip = dow === 6 ? 'Sabtu (akhir pekan tidak dapat dipilih)' : 'Minggu (akhir pekan tidak dapat dipilih)';
+                    else if (isHoliday) tooltip = holidayLabel ? `Hari libur: ${holidayLabel}` : 'Hari libur tidak dapat dipilih';
+                    else if (isBeforeMin) tooltip = 'Sebelum tanggal mulai';
+                    else if (isAfterMax) tooltip = 'Melebihi batas maksimal 5 hari kerja';
+                    else tooltip = 'Bukan pilihan hari kerja yang diizinkan';
+                  }
+                } else {
+                  if (isBeforeMin) tooltip = 'Sebelum batas tanggal minimal';
+                  else if (isAfterMax) tooltip = 'Melebihi batas tanggal maksimal';
+                  else if (disableNonWorking && !isWork) {
+                    tooltip = isWeekend ? (dow === 6 ? 'Sabtu (akhir pekan tidak dapat dipilih)' : 'Minggu (akhir pekan tidak dapat dipilih)') : (holidayLabel ? `Hari libur: ${holidayLabel}` : 'Hari libur tidak dapat dipilih');
+                  } else {
+                    selectable = true;
+                  }
+                }
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    disabled={!selectable}
+                    title={tooltip || undefined}
+                    className={'datepicker-cell' + (selectable ? ' selectable' : ' disabled') + (isWeekend ? ' weekend' : '') + (isHoliday ? ' holiday' : '') + (d === value && selectable ? ' selected' : '')}
+                    onClick={() => {
+                      if (selectable) {
+                        onChange(d);
+                        setInputValue(formatIsoToDisplay(d));
+                        setOpen(false);
+                      }
+                    }}
+                  >
+                    {dayNum}
+                  </button>
+                );
+              })}
+            </div>
+            {validDates && validDates.length > 0 && (
+              <div className="datepicker-quick">
+                <div className="datepicker-quick-label">Pilihan hari kerja ({validDates.length} hari):</div>
+                <div className="datepicker-quick-pills">
+                  {validDates.map((vd, i) => (
+                    <button
+                      key={vd}
+                      type="button"
+                      className={'datepicker-pill' + (vd === value ? ' active' : '')}
+                      onClick={() => {
+                        onChange(vd);
+                        setInputValue(formatIsoToDisplay(vd));
+                        setOpen(false);
+                      }}
+                    >
+                      <span>{new Intl.DateTimeFormat('id-ID', { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(vd + 'T00:00:00'))}</span>
+                      <small>({i + 1} hari)</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="datepicker-notice">
+              <Info size={13} />
+              <span>{blockMonthEnd ? 'Akhir pekan, hari libur, dan 3 hari kerja terakhir bulan tidak dapat dipilih.' : 'Sabtu, Minggu, dan hari libur tidak dapat dipilih.'}</span>
+            </div>
+            <div className="datepicker-foot">
+              {value ? (
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    onChange('');
+                    setInputValue('');
+                    setOpen(false);
+                  }}
+                >
+                  Hapus
+                </button>
+              ) : (
+                <span />
+              )}
+              <button
+                type="button"
+                className="button secondary"
+                style={{ minHeight: 28, padding: '4px 10px', fontSize: 11 }}
+                onClick={() => setOpen(false)}
+              >
+                Tutup
+              </button>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

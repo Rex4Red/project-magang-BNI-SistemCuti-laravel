@@ -68,6 +68,29 @@ th{font-size:11px;color:#6b7e85}td{padding:16px 20px;font-size:13px}td>small{fon
 .datepicker-notice{font-size:9px;color:#8fa0a6;margin-top:8px;line-height:1.4;display:flex;align-items:center;gap:5px}
 .datepicker-notice svg{flex-shrink:0;color:#cb7c63}
 .datepicker-foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:8px;border-top:1px solid #edf1f3}
+.datepicker-modal-backdrop{display:none}
+.datepicker-mobile-bar{display:none}
+.datepicker-mobile-input-row{display:none}
+
+@media(max-width:760px){
+  .datepicker-modal-backdrop{display:block;position:fixed;inset:0;background:#0d283080;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:999;animation:dpFadeIn .2s ease-out}
+  .datepicker-popover{position:fixed!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;width:340px!important;max-width:calc(100vw - 32px)!important;max-height:92vh!important;overflow-y:auto!important;z-index:1000!important;background:#fff!important;border:1px solid #d2e1e4!important;border-radius:16px!important;box-shadow:0 20px 60px rgba(11,39,48,0.38),0 6px 18px rgba(0,0,0,0.1)!important;padding:18px 16px!important;animation:dpPopUp .25s cubic-bezier(0.16,1,0.3,1)!important}
+  .datepicker-mobile-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #edf2f4}
+  .datepicker-mobile-title{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:#1d3d45}
+  .datepicker-mobile-title svg{color:var(--teal)}
+  .datepicker-mobile-close{background:#f0f5f6;border:0;color:#5a767f;width:32px;height:32px;border-radius:8px;display:grid;place-items:center;cursor:pointer;padding:0;transition:background .15s}
+  .datepicker-mobile-close:hover{background:#e2ecee;color:#18363e}
+  .datepicker-mobile-input-row{display:block;background:#f7fafb;border:1px solid #e1e9ec;border-radius:9px;padding:9px 11px;margin-bottom:13px}
+  .datepicker-mobile-input-label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:600;color:#49656e}
+  .datepicker-mobile-text-input{width:100%;min-height:36px;height:36px;padding:6px 10px;font-size:14px;font-weight:600;letter-spacing:.5px;background:#fff;border:1px solid #cad7db;border-radius:6px;color:#18363e}
+  .datepicker-mobile-text-input:focus{border-color:var(--teal);outline:none;box-shadow:0 0 0 2px rgba(0,103,118,0.2)}
+  .datepicker-grid{gap:4px}
+  .datepicker-cell{min-height:36px;font-size:12px;font-weight:600}
+  .datepicker-foot{margin-top:14px;padding-top:10px}
+}
+
+@keyframes dpFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes dpPopUp{from{opacity:0;transform:translate(-50%,-46%) scale(0.95)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
 
 .modal.modal-compact{width:520px;max-width:100%}.decision-summary{display:flex;flex-direction:column;gap:8px;margin-bottom:24px;font-size:13px;line-height:1.6}.decision-summary strong{font-size:16px}.decision-summary span{color:#60777f}
 .employee-actions{display:flex;align-items:center;gap:8px}.employee-actions .text-button{justify-content:center;min-width:60px;min-height:36px;padding:7px 12px;border:1px solid #b7d6da;border-radius:6px;background:#f0f7f8;color:var(--teal)}.employee-actions .text-button:hover{background:#e3f0f2}.employee-actions .delete-link{border-color:#e5bcb9;background:#fff5f4;color:#ad302b}.employee-actions .delete-link:hover{background:#fbe8e6}
