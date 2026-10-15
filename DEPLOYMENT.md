@@ -122,7 +122,7 @@ Susunan instalasi pada hosting uji:
 
 Document root subdomain diarahkan ke `cuti-deploy/current/public`. Folder `.env` dan storage lama tetap berada di `/home/yyuyabzu/sistemcuti.bgskr.my.id/`; source lama dipertahankan sebagai cadangan awal. Cron email harus memakai `cuti-deploy/current/artisan` agar mengikuti kode aktif. Hosting ini membatasi `proc_open`, sehingga cron email memanggil `cuti:mail` secara langsung.
 
-`config.json` memakai field `repository`, `base`, `environment`, `storage`, `initial`, dan `url`. Nilai repository adalah `Rex4Red/project-magang-BNI-SistemCuti-laravel`. Field `initial` menunjuk project lama untuk menginisialisasi symlink sebelum document root dipindahkan. Jalankan `php deploy-release.php config.json --initialize` sekali, kemudian pasang cron pada Linux dengan ekstensi cURL dan Zip serta symlink yang didukung hosting:
+`config.json` memakai field `repository`, `base`, `environment`, `storage`, `initial`, dan `url`. Nilai repository adalah `Rex4Red/project-magang-BNI-SistemCuti-laravel`. Field `initial` menunjuk project lama untuk menginisialisasi symlink sebelum document root dipindahkan. Pada hosting uji, tambahkan `php_handler: "application/x-httpd-ea-php83"` agar setiap rilis mempertahankan penetapan PHP 8.3 di `.htaccess`; hapus field opsional ini pada server yang memilih PHP melalui konfigurasi vhost saja. Jalankan `php deploy-release.php config.json --initialize` sekali, kemudian pasang cron pada Linux dengan ekstensi cURL dan Zip serta symlink yang didukung hosting:
 
 ~~~cron
 */2 * * * * /opt/cpanel/ea-php83/root/usr/bin/php /home/yyuyabzu/cuti-deploy/deploy-release.php /home/yyuyabzu/cuti-deploy/config.json >> /home/yyuyabzu/cuti-deploy/deploy.log 2>&1

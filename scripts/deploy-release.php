@@ -130,7 +130,17 @@ try {
     }
     $installing = true;
     ReleasePackage::install($archive, $base, $configuration['environment'], $configuration['storage'], $commit,
-        function (string $release) use ($base, $commit): void {
+        function (string $release) use ($base, $commit, $configuration): void {
+            $handler = $configuration['php_handler'] ?? null;
+            if ($handler !== null) {
+                if (! preg_match('~^application/x-httpd-[a-z0-9-]+$~', $handler)) {
+                    throw new RuntimeException('Invalid hosting PHP handler.');
+                }
+                $directive = "\n<IfModule mime_module>\n  AddHandler ".$handler." .php .php8 .phtml\n</IfModule>\n";
+                if (file_put_contents($release.'/public/.htaccess', $directive, FILE_APPEND) === false) {
+                    throw new RuntimeException('Cannot preserve the hosting PHP version.');
+                }
+            }
             require $release.'/vendor/autoload.php';
             $app = require $release.'/bootstrap/app.php';
             $kernel = $app->make(Kernel::class);
