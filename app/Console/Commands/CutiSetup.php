@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Domain\CutiStore;
+use App\Domain\DemoAccounts;
 use App\Domain\LeaveRules;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -10,25 +11,26 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-#[Signature('cuti:setup {--demo : Create demonstration accounts in an empty database}')]
+#[Signature('cuti:setup {--demo : Create or recover demonstration accounts outside production}')]
 #[Description('Initialize an empty BNI cuti database without replacing existing records')]
 class CutiSetup extends Command
 {
     /**
      * Execute the console command.
      */
-    public function handle(CutiStore $store): int
+    public function handle(CutiStore $store, DemoAccounts $demoAccounts): int
     {
-        if (DB::table('units')->exists()) {
-            $this->info('Data sudah tersedia; tidak ada data yang ditimpa.');
-
-            return self::SUCCESS;
-        }
         $demo = (bool) $this->option('demo');
         if ($demo && (! config('cuti.demo') || app()->environment('production'))) {
             $this->error('Demo hanya dapat dibuat ketika DEMO_MODE=true di lingkungan local/testing.');
 
             return self::FAILURE;
+        }
+        if (DB::table('units')->exists()) {
+            $recovered = $demo ? $demoAccounts->recover() : 0;
+            $this->info($recovered > 0 ? $recovered.' akun demo dipulihkan; data lainnya tetap.' : 'Data sudah tersedia; tidak ada data yang ditimpa.');
+
+            return self::SUCCESS;
         }
         $email = $demo ? 'admin@demo.bni.local' : config('cuti.bootstrap_email');
         $password = $demo ? 'BniCuti!2026' : config('cuti.bootstrap_password');

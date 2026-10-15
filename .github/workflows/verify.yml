@@ -53,7 +53,7 @@ jobs:
           DB_DATABASE: bni_cuti_ci_test
           DB_USERNAME: root
           DB_PASSWORD: ci-only-password
-        run: php artisan test tests/Feature/MySqlConcurrencyTest.php tests/Feature/CutiWorkflowTest.php tests/Feature/MailAndImportTest.php
+        run: php artisan test tests/Feature/MySqlConcurrencyTest.php tests/Feature/CutiWorkflowTest.php tests/Feature/MailAndImportTest.php tests/Feature/DemoAccountRecoveryTest.php
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4

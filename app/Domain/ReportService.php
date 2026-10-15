@@ -2,22 +2,24 @@
 
 namespace App\Domain;
 
+use Carbon\CarbonImmutable;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Writer\Xls;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 final class ReportService
 {
     public function download(array $rows, array $actor, string $month, string $format): StreamedResponse
     {
         $labels = ['PENDING_SDM' => 'Menunggu review', 'APPROVED' => 'Disetujui', 'REJECTED' => 'Ditolak', 'WITHDRAWN' => 'Ditarik'];
-        $headers = ['No.', 'Nomor pengajuan', 'Nama pegawai', 'Posisi', 'Kategori', 'Jenis cuti', 'Mulai', 'Akhir', 'Hari kerja', 'Status', 'Diajukan'];
+        $headers = ['No.', 'Nomor pengajuan', 'Nama pegawai', 'Posisi', 'Kategori', 'Jenis cuti', 'Mulai', 'Akhir', 'Hari kerja', 'Status', 'Waktu Diajukan'];
         $data = [];
         foreach ($rows as $index => $leave) {
-            $data[] = [$index + 1, $leave['number'], $leave['employeeName'], $leave['positionName'] ?? $leave['position'], $leave['category'] === 'REGULAR' ? 'Reguler' : 'Darurat', $leave['subtype'], $leave['effectiveStart'], $leave['effectiveEnd'], $leave['duration'], $labels[$leave['status']] ?? $leave['status'], substr($leave['submittedAt'], 0, 10)];
+            $data[] = [$index + 1, $leave['number'], $leave['employeeName'], $leave['positionName'] ?? $leave['position'], $leave['category'] === 'REGULAR' ? 'Reguler' : 'Darurat', $leave['subtype'], $leave['effectiveStart'], $leave['effectiveEnd'], $leave['duration'], $labels[$leave['status']] ?? $leave['status'], $this->submittedAt($leave)];
         }
         $type = ['xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xls' => 'application/vnd.ms-excel', 'csv' => 'text/csv; charset=UTF-8'][$format];
 
@@ -54,5 +56,18 @@ final class ReportService
             ($format === 'xlsx' ? new Xlsx($workbook) : new Xls($workbook))->save('php://output');
             $workbook->disconnectWorksheets();
         }, 'monitoring-cuti-'.$month.'.'.$format, ['Content-Type' => $type, 'Cache-Control' => 'private, no-store']);
+    }
+
+    private function submittedAt(array $leave): string
+    {
+        $timestamp = ($leave['submittedAt'] ?? '') ?: ($leave['createdAt'] ?? '');
+        if (! is_string($timestamp) || $timestamp === '') {
+            return '-';
+        }
+        try {
+            return CarbonImmutable::parse($timestamp, 'UTC')->setTimezone('Asia/Jakarta')->locale('id')->translatedFormat('j M Y H:i:s').' WIB';
+        } catch (Throwable) {
+            return $timestamp;
+        }
     }
 }

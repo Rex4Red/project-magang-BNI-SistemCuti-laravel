@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Domain\AdminService;
 use App\Domain\CutiError;
 use App\Domain\CutiStore;
+use App\Domain\DemoAccounts;
 use App\Domain\LeaveRules;
 use App\Domain\LeaveService;
 use App\Domain\ReplacementService;
@@ -17,7 +18,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class CutiController extends Controller
 {
-    public function __construct(private CutiStore $store, private LeaveService $leaves, private ReplacementService $replacements, private AdminService $admin, private ReportService $reports) {}
+    public function __construct(private CutiStore $store, private LeaveService $leaves, private ReplacementService $replacements, private AdminService $admin, private ReportService $reports, private DemoAccounts $demoAccounts) {}
 
     public function health(): JsonResponse
     {
@@ -36,6 +37,7 @@ final class CutiController extends Controller
         $body = Validator::make($request->all(), ['email' => 'required|email:rfc|max:200', 'password' => 'required|string|max:200'])->validate();
 
         return DB::transaction(function () use ($request, $body) {
+            $this->demoAccounts->recoverForLogin($body['email'], $body['password']);
             $row = DB::table('employees')->where('email', strtolower($body['email']))->lockForUpdate()->first();
             $actor = $row ? CutiStore::decode($row->data) : null;
             $fallback = '$2y$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.';

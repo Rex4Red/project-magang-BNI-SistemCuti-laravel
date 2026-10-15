@@ -85,6 +85,40 @@ class MailAndImportTest extends TestCase
         }
     }
 
+    public function test_report_formats_include_the_full_submission_time_in_jakarta(): void
+    {
+        $store = $this->seedDemo();
+        $leave = $store->requests('KC01')[0];
+        $leave['submittedAt'] = '2026-10-15T06:07:08Z';
+        $expected = '15 Okt 2026 13:07:08 WIB';
+        foreach (['xlsx', 'xls', 'csv'] as $format) {
+            $response = app(ReportService::class)->download([$leave], $store->employee('sdm'), 'all', $format);
+            ob_start();
+            $response->sendContent();
+            $bytes = ob_get_clean();
+            if ($format === 'csv') {
+                $this->assertStringContainsString('Waktu Diajukan', $bytes);
+                $this->assertStringContainsString($expected, $bytes);
+
+                continue;
+            }
+            $file = tempnam(sys_get_temp_dir(), 'cuti-time-');
+            try {
+                file_put_contents($file, $bytes);
+                $sheet = IOFactory::load($file)->getSheetByName('Monitoring Cuti Pegawai');
+                $this->assertSame('Waktu Diajukan', $sheet->getCell('K5')->getValue());
+                $this->assertSame($expected, $sheet->getCell('K6')->getValue());
+            } finally {
+                unlink($file);
+            }
+        }
+        $leave['submittedAt'] = '';
+        $leave['createdAt'] = '2026-10-15T06:07:08Z';
+        ob_start();
+        app(ReportService::class)->download([$leave], $store->employee('sdm'), 'all', 'csv')->sendContent();
+        $this->assertStringContainsString($expected, ob_get_clean());
+    }
+
     private function exportFixture(): array
     {
         $employee = ['id' => 'old-admin', 'unit' => 'OLD', 'name' => 'Admin lama', 'email' => 'old@example.test', 'phone' => '081234567890', 'position' => 'BM', 'roles' => ['ADMIN'], 'active' => true, 'outletId' => 'OLD-SUDIRMAN'];

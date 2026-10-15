@@ -6,5 +6,6 @@ export default defineConfig({
   base: process.env.NODE_ENV==='production'?'/build/':'/',
   publicDir:false,
   build:{outDir:'public/build',emptyOutDir:true},
-  server:{proxy:{'/api':process.env.API_TARGET??'http://127.0.0.1:3004','/images':process.env.API_TARGET??'http://127.0.0.1:3004'}},
+  server:{proxy:{'/api':{target:process.env.API_TARGET??'http://127.0.0.1:3004',changeOrigin:true},'/images':process.env.API_TARGET??'http://127.0.0.1:3004'}},
+  optimizeDeps:{include:['react','react-dom','lucide-react']},
 });

@@ -2,6 +2,8 @@
 
 Versi terpisah dari project Node/Express pada commit 44d1fe7afa0ccfd68736a381813ca45c00b7c694. Backend memakai Laravel 13 dan MySQL/MariaDB. Tampilan React yang sudah ada dipertahankan.
 
+Pembaruan Node disinkronkan sampai commit `9ce4e4e`: laporan PDF A4 portrait, waktu pengajuan lengkap dalam WIB, pengurutan antrean, penanganan gangguan frontend, dan pemulihan akun demo khusus lingkungan nonproduksi.
+
 Node.js hanya diperlukan saat membangun tampilan atau menjalankan pengujian frontend. Hosting menjalankan PHP; tidak perlu proses Node atau queue worker yang hidup terus.
 
 ## Kebutuhan
