@@ -423,7 +423,7 @@ function RequestList({requests,month,sdm,onSelect,onDraft,userId}:any){
 }
 function CalendarView({data,month,setMonth,onSelect}:any){const {positions:POSITIONS,positionLabel}=useDirectory();const [position,setPosition]=useState('ALL');const days=monthDays(month);const offset=(new Date(month+'-01T00:00:00').getDay()+6)%7;const entries=data.calendar.filter((r:any)=>position==='ALL'||r.position===position);return <><section className="panel calendar-panel"><div className="panel-heading"><div className="calendar-heading"><button className="icon-button" aria-label="Bulan sebelumnya" onClick={()=>setMonth(addMonths(month+'-01',-1).slice(0,7))}><ChevronLeft size={18}/></button><h2>{monthLabel(month)}</h2><button className="icon-button" aria-label="Bulan berikutnya" onClick={()=>setMonth(addMonths(month+'-01',1).slice(0,7))}><ChevronRight size={18}/></button></div><select aria-label="Filter posisi kalender" value={position} onChange={e=>setPosition(e.target.value)}><option value="ALL">Semua posisi</option>{data.quotas.map((q:Quota)=><option key={q.position} value={q.position}>{q.label}</option>)}</select></div><div className="calendar-scroll"><div className="calendar-grid">{['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d=><div className="weekday" key={d}>{d}</div>)}{Array.from({length:offset},(_,i)=><div className="day outside" key={'o'+i}/>)}{days.map(d=>{const blocked=data.blocked.includes(d);const off=!isWorking(d,data.calendarConfig);return <div key={d} className={'day '+(blocked?'blocked ':'')+(off?'off ':'')+(d===data.today?'current':'')}><div className="day-number">{Number(d.slice(-2))}{blocked&&<small>H-3</small>}</div>{data.calendarConfig.exceptions[d]&&<small className="holiday-label">{data.calendarConfig.exceptions[d].label}</small>}{entries.filter((r:any)=>r.days.includes(d)).map((r:any,i:number)=><button disabled={!r.id} key={r.id+'-'+i} onClick={()=>onSelect(r.id)} className={'calendar-event '+(r.status==='APPROVED'?'approved':'pending')}><span>{r.name}</span><small>{(r.positionName??positionLabel(r.position))} · {r.status==='APPROVED'?'Disetujui':'Menunggu'}</small></button>)}</div>;})}</div></div><div className="legend calendar-legend"><span><i className="teal-dot"/>Disetujui</span><span><i className="orange-dot"/>Menunggu review</span><span><i className="blocked-dot"/>3 hari kerja terakhir</span><span>Kalender kerja unit: Senin–Jumat + pengecualian admin</span></div></section><section className="panel all-quotas"><div className="panel-heading"><h2>Kapasitas posisi bulan ini</h2><span className="muted">Terpakai / kuota orang</span></div><div className="quota-cards">{data.quotas.map((q:Quota)=><div key={q.position}><strong>{q.label}</strong><span>{q.used}<small> / {q.limit}</small></span><p>{q.available} orang tersedia</p></div>)}</div></section></>;}
 
-function DatePicker({label,value,onChange,min,max,calendar,validDates,disabled=false,disableNonWorking=false,blockedDates=[],placeholder='Pilih tanggal'}:{label:string;value:string;onChange:(val:string)=>void;min?:string;max?:string;calendar?:any;validDates?:string[];disabled?:boolean;disableNonWorking?:boolean;blockedDates?:string[];placeholder?:string}){
+function DatePicker({label,value,onChange,min,max,calendar,validDates,disabled=false,disableNonWorking=false,blockMonthEnd=false,placeholder='Pilih tanggal'}:{label:string;value:string;onChange:(val:string)=>void;min?:string;max?:string;calendar?:any;validDates?:string[];disabled?:boolean;disableNonWorking?:boolean;blockMonthEnd?:boolean;placeholder?:string}){
   const containerRef=useRef<HTMLDivElement>(null);
   const [open,setOpen]=useState(false);
   const initialMonth=value&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value.slice(0,7):(min&&/^\d{4}-\d{2}-\d{2}$/.test(min)?min.slice(0,7):dateOnly().slice(0,7));
@@ -452,6 +452,7 @@ function DatePicker({label,value,onChange,min,max,calendar,validDates,disabled=f
     onChange(text);
   };
   const days=monthDays(viewMonth);
+  const blockedDates=blockMonthEnd&&calendar?blockedDays(viewMonth,calendar):[];
   const firstDayOfWeek=new Date(viewMonth+'-01T00:00:00Z').getUTCDay();
   const weekdays=['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
   return (
@@ -484,14 +485,15 @@ function DatePicker({label,value,onChange,min,max,calendar,validDates,disabled=f
               const isBlocked=Boolean(blockedDates&&blockedDates.includes(d));
               let selectable=false;
               let tooltip='';
-              if(validDates){
+              if(isBlocked){
+                tooltip='3 hari kerja terakhir bulan (H-3)';
+              }else if(validDates){
                 selectable=validDates.includes(d);
                 if(!selectable){
                   if(isWeekend)tooltip=dow===6?'Sabtu (akhir pekan tidak dapat dipilih)':'Minggu (akhir pekan tidak dapat dipilih)';
                   else if(isHoliday)tooltip=holidayLabel?`Hari libur: ${holidayLabel}`:'Hari libur tidak dapat dipilih';
                   else if(isBeforeMin)tooltip='Sebelum tanggal mulai';
                   else if(isAfterMax)tooltip='Melebihi batas maksimal 5 hari kerja';
-                  else if(isBlocked)tooltip='3 hari kerja terakhir bulan (H-3)';
                   else tooltip='Bukan pilihan hari kerja yang diizinkan';
                 }
               }else{
@@ -499,8 +501,6 @@ function DatePicker({label,value,onChange,min,max,calendar,validDates,disabled=f
                 else if(isAfterMax)tooltip='Melebihi batas tanggal maksimal';
                 else if(disableNonWorking&&!isWork){
                   tooltip=isWeekend?(dow===6?'Sabtu (akhir pekan tidak dapat dipilih)':'Minggu (akhir pekan tidak dapat dipilih)'):(holidayLabel?`Hari libur: ${holidayLabel}`:'Hari libur tidak dapat dipilih');
-                }else if(isBlocked){
-                  tooltip='3 hari kerja terakhir bulan (H-3)';
                 }else{
                   selectable=true;
                 }
@@ -511,7 +511,7 @@ function DatePicker({label,value,onChange,min,max,calendar,validDates,disabled=f
                   type="button"
                   disabled={!selectable}
                   title={tooltip||undefined}
-                  className={'datepicker-cell'+(selectable?' selectable':' disabled')+(isWeekend?' weekend':'')+(isHoliday?' holiday':'')+(d===value?' selected':'')}
+                  className={'datepicker-cell'+(selectable?' selectable':' disabled')+(isWeekend?' weekend':'')+(isHoliday?' holiday':'')+(d===value&&selectable?' selected':'')}
                   onClick={()=>{if(selectable){onChange(d);setOpen(false);}}}
                 >
                   {dayNum}
@@ -537,7 +537,7 @@ function DatePicker({label,value,onChange,min,max,calendar,validDates,disabled=f
               </div>
             </div>
           )}
-          <div className="datepicker-notice"><Info size={13}/><span>Sabtu, Minggu, dan hari libur tidak dapat dipilih.</span></div>
+          <div className="datepicker-notice"><Info size={13}/><span>{blockMonthEnd?'Akhir pekan, hari libur, dan 3 hari kerja terakhir bulan tidak dapat dipilih.':'Sabtu, Minggu, dan hari libur tidak dapat dipilih.'}</span></div>
           <div className="datepicker-foot">
             {value?<button type="button" className="text-button" onClick={()=>{onChange('');setOpen(false);}}>Hapus</button>:<span/>}
             <button type="button" className="button secondary" style={{minHeight:28,padding:'4px 10px',fontSize:11}} onClick={()=>setOpen(false)}>Tutup</button>
@@ -569,7 +569,7 @@ function LeaveForm({user,today,draft,calendar,onDone,onDelete}:{user:Employee;to
   return <div className="form-layout"><section className="panel form-panel"><div className="section-number"><b>01</b><div><h2>Detail pengajuan</h2><p>{user.name} · {positionLabel(user.position)}</p></div></div><div className="category-options"><button className={input.category==='REGULAR'?'chosen':''} onClick={()=>{update('category','REGULAR');update('subtype',regularType==='Lainnya'?'':regularType);}}><CalendarDays size={23}/><strong>Cuti reguler</strong><small>Rencanakan satu bulan sebelumnya</small>{input.category==='REGULAR'&&<CheckCircle2 size={17}/>}</button><button className={input.category==='EMERGENCY'?'chosen':''} onClick={()=>{update('category','EMERGENCY');update('subtype',emergencyType==='Lainnya'?'':emergencyType);}}><Clock3 size={23}/><strong>Cuti darurat</strong><small>Tanpa masa tunggu satu bulan</small>{input.category==='EMERGENCY'&&<CheckCircle2 size={17}/>}</button></div>
       {input.category==='EMERGENCY'?<><Field label="Jenis cuti darurat"><select value={emergencyType} onChange={e=>{setEmergencyType(e.target.value);update('subtype',e.target.value==='Lainnya'?'':e.target.value);}}><option>Cuti Duka</option><option>Cuti Sakit</option><option>Lainnya</option></select></Field>{emergencyType==='Lainnya'&&<Field label="Nama jenis cuti"><input placeholder="Tuliskan nama jenis cuti darurat…" value={input.subtype} onChange={e=>update('subtype',e.target.value)} maxLength={120}/></Field>}</>:<><Field label="Jenis cuti"><select value={regularType} onChange={e=>{setRegularType(e.target.value);update('subtype',e.target.value==='Lainnya'?'':e.target.value);}}>{REGULAR_LEAVE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></Field>{regularType==='Lainnya'&&<Field label="Nama jenis cuti"><input placeholder="Tuliskan nama jenis cuti reguler…" value={input.subtype} onChange={e=>update('subtype',e.target.value)} maxLength={120}/></Field>}</>}
       <Field label="Alasan pengajuan" hint="Minimal 10 karakter. Alasan hanya dapat dilihat oleh Anda dan SDM berwenang."><textarea rows={3} value={input.reason} onChange={e=>update('reason',e.target.value)} placeholder="Ceritakan keperluan cuti Anda…" maxLength={2000}/></Field>
-      <div className="section-number separated"><b>02</b><div><h2>Jadwal cuti</h2></div></div><div className="alert info"><Info size={18}/><span>{input.category==='REGULAR'?`Batas masa tunggu: ${fmt(minimum,true)}. `:'Cuti darurat dapat dimulai hari ini. '}Hindari 3 hari kerja terakhir bulan; maksimal 5 hari kerja.</span></div><div className="field-grid"><Field label="Tanggal mulai"><DatePicker label="Tanggal mulai" value={input.start} onChange={handleStartChange} min={minimum} calendar={calendar} disableNonWorking={true} blockedDates={calendar?blockedDays(minimum.slice(0,7),calendar):[]} placeholder="Pilih tanggal mulai"/></Field><Field label="Tanggal akhir" hint={maxEnd?`Maksimal 5 hari kerja s.d. ${fmt(maxEnd,true)}`:'Maksimal 5 hari kerja'}><DatePicker label="Tanggal akhir" value={input.end} onChange={handleEndChange} min={input.start||minimum} max={maxEnd||undefined} calendar={calendar} validDates={validEndDates} disabled={!input.start} placeholder={!input.start?'Pilih tanggal mulai dahulu':'Pilih tanggal akhir'}/></Field></div>
+      <div className="section-number separated"><b>02</b><div><h2>Jadwal cuti</h2></div></div><div className="alert info"><Info size={18}/><span>{input.category==='REGULAR'?`Batas masa tunggu: ${fmt(minimum,true)}. `:'Cuti darurat dapat dimulai hari ini. '}Hindari 3 hari kerja terakhir bulan; maksimal 5 hari kerja.</span></div><div className="field-grid"><Field label="Tanggal mulai"><DatePicker label="Tanggal mulai" value={input.start} onChange={handleStartChange} min={minimum} calendar={calendar} disableNonWorking={true} blockMonthEnd placeholder="Pilih tanggal mulai"/></Field><Field label="Tanggal akhir" hint={maxEnd?`Maksimal 5 hari kerja s.d. ${fmt(maxEnd,true)}`:'Maksimal 5 hari kerja'}><DatePicker label="Tanggal akhir" value={input.end} onChange={handleEndChange} min={input.start||minimum} max={maxEnd||undefined} calendar={calendar} validDates={validEndDates} blockMonthEnd disabled={!input.start} placeholder={!input.start?'Pilih tanggal mulai dahulu':'Pilih tanggal akhir'}/></Field></div>
       {input.start&&!isWorking(input.start,calendar)&&<div className="alert danger">Tanggal mulai bukan hari kerja. Pilih hari kerja lain.</div>}
       {input.end&&!isWorking(input.end,calendar)&&<div className="alert danger">Tanggal akhir bukan hari kerja (Sabtu, Minggu, atau hari libur). Pilih hari kerja lain.</div>}
       {maxEnd&&input.end&&input.end>maxEnd&&<div className="alert danger">Tanggal akhir melebihi batas 5 hari kerja (maksimal hingga {fmt(maxEnd,true)}).</div>}
