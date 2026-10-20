@@ -1276,9 +1276,7 @@ function Detail({leave:r,user,today,unitName,onClose,onUpdate,onCopy}:{leave:Lea
     </div>}
     {error&&<div className="alert danger" role="alert">{error}</div>}{r.employeeId===user.id&&['REJECTED','WITHDRAWN'].includes(r.status)&&<button className="button secondary" onClick={onCopy}><Plus size={17}/>Salin ke pengajuan baru</button>}
     <div className="modal-actions">
-
       {hasPendingCancellation&&r.employeeId===user.id&&<button className="button secondary" disabled={busy} onClick={()=>update('cancel-abort',{})}>Tarik permohonan pembatalan</button>}
-      {canRequestCancellation&&<button className="button secondary" style={{color:'#ad302b',borderColor:'#f1cfcb'}} onClick={()=>{setReason('');setConfirmAction('CANCEL_REQUEST');}}><X size={16}/>Ajukan pembatalan cuti</button>}
       {r.status==='APPROVED'&&<button type="button" className="button secondary" onClick={()=>setShowCertificate(true)}><Printer size={16}/>Surat Cuti</button>}{canReview&&<><button className="button secondary" onClick={()=>setConfirmAction('REJECTED')}>Tolak pengajuan</button><button className="button primary" disabled={busy||pgsBlocked||r.effectiveStart<today||(r.category==='REGULAR'&&r.confirmation!=='CONFIRMED')} onClick={()=>setConfirmAction('APPROVED')}><Check size={17}/>Setujui pengajuan</button></>}
     </div>
     {showCertificate&&<LeaveCertificateModal leave={r} unitName={unitName||'Kantor Cabang'} positionName={r.positionName||positionLabel(r.position)} onClose={()=>setShowCertificate(false)}/>}
