@@ -62,8 +62,13 @@ final class LeaveService
             $id = $draft['id'] ?? (string) Str::uuid();
             $location = collect($this->store->outlets($actor['unit']))->firstWhere('id', CutiStore::outletId($actor));
             CutiError::check($location, 'Outlet karyawan tidak tersedia. Hubungi administrator.');
+            $policy = $this->store->policy($actor['unit']);
+            $requiresPgs = ($policy['replacementRules'][$actor['position']]['enabled'] ?? false);
+            $status = $requiresPgs ? 'PENDING_SDM' : 'APPROVED';
             $now = LeaveRules::timestamp();
-            $leave = [...$input, 'id' => $id, 'number' => 'CT-'.str_replace('-', '', LeaveRules::today()).'-'.strtoupper(substr($id, 0, 6)), 'employeeId' => $actor['id'], 'employeeName' => $actor['name'], 'position' => $actor['position'], 'positionName' => $actor['positionName'] ?? $actor['position'], 'unit' => $actor['unit'], 'outletId' => $location['id'], 'outletName' => $location['name'], 'status' => 'APPROVED', 'days' => $preview['days'], 'effectiveStart' => $preview['effectiveStart'], 'effectiveEnd' => $preview['effectiveEnd'], 'duration' => $preview['duration'], 'submittedAt' => $now, 'createdAt' => $draft['createdAt'] ?? $now, 'confirmation' => 'NOT_CONFIRMED', 'version' => ($draft['version'] ?? 0) + 1, 'calendarVersion' => $this->store->policy($actor['unit'])['calendar']['version'], 'limit' => $preview['quota']['limit'], 'events' => [['at' => $now, 'text' => 'Pengajuan disetujui otomatis', 'actor' => 'Sistem']]];
+            $eventText = $requiresPgs ? 'Pengajuan dikirim ke SDM' : 'Pengajuan disetujui otomatis';
+            $eventActor = $requiresPgs ? $actor['name'] : 'Sistem';
+            $leave = [...$input, 'id' => $id, 'number' => 'CT-'.str_replace('-', '', LeaveRules::today()).'-'.strtoupper(substr($id, 0, 6)), 'employeeId' => $actor['id'], 'employeeName' => $actor['name'], 'position' => $actor['position'], 'positionName' => $actor['positionName'] ?? $actor['position'], 'unit' => $actor['unit'], 'outletId' => $location['id'], 'outletName' => $location['name'], 'status' => $status, 'days' => $preview['days'], 'effectiveStart' => $preview['effectiveStart'], 'effectiveEnd' => $preview['effectiveEnd'], 'duration' => $preview['duration'], 'submittedAt' => $now, 'createdAt' => $draft['createdAt'] ?? $now, 'confirmation' => 'NOT_CONFIRMED', 'version' => ($draft['version'] ?? 0) + 1, 'calendarVersion' => $policy['calendar']['version'], 'limit' => $preview['quota']['limit'], 'events' => [['at' => $now, 'text' => $eventText, 'actor' => $eventActor]]];
             $this->store->saveRequest($leave);
             $this->store->audit($actor, 'SUBMIT', $id);
             $this->store->queueMail($leave, $input['category'] === 'REGULAR' ? 'REMINDER' : 'EMERGENCY', $preview['scheduledAt']);
