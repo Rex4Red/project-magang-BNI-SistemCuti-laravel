@@ -63,7 +63,7 @@ final class LeaveService
             $location = collect($this->store->outlets($actor['unit']))->firstWhere('id', CutiStore::outletId($actor));
             CutiError::check($location, 'Outlet karyawan tidak tersedia. Hubungi administrator.');
             $now = LeaveRules::timestamp();
-            $leave = [...$input, 'id' => $id, 'number' => 'CT-'.str_replace('-', '', LeaveRules::today()).'-'.strtoupper(substr($id, 0, 6)), 'employeeId' => $actor['id'], 'employeeName' => $actor['name'], 'position' => $actor['position'], 'positionName' => $actor['positionName'] ?? $actor['position'], 'unit' => $actor['unit'], 'outletId' => $location['id'], 'outletName' => $location['name'], 'status' => 'PENDING_SDM', 'days' => $preview['days'], 'effectiveStart' => $preview['effectiveStart'], 'effectiveEnd' => $preview['effectiveEnd'], 'duration' => $preview['duration'], 'submittedAt' => $now, 'createdAt' => $draft['createdAt'] ?? $now, 'confirmation' => 'NOT_CONFIRMED', 'version' => ($draft['version'] ?? 0) + 1, 'calendarVersion' => $this->store->policy($actor['unit'])['calendar']['version'], 'limit' => $preview['quota']['limit'], 'events' => [['at' => $now, 'text' => 'Pengajuan dikirim ke SDM', 'actor' => $actor['name']]]];
+            $leave = [...$input, 'id' => $id, 'number' => 'CT-'.str_replace('-', '', LeaveRules::today()).'-'.strtoupper(substr($id, 0, 6)), 'employeeId' => $actor['id'], 'employeeName' => $actor['name'], 'position' => $actor['position'], 'positionName' => $actor['positionName'] ?? $actor['position'], 'unit' => $actor['unit'], 'outletId' => $location['id'], 'outletName' => $location['name'], 'status' => 'APPROVED', 'days' => $preview['days'], 'effectiveStart' => $preview['effectiveStart'], 'effectiveEnd' => $preview['effectiveEnd'], 'duration' => $preview['duration'], 'submittedAt' => $now, 'createdAt' => $draft['createdAt'] ?? $now, 'confirmation' => 'NOT_CONFIRMED', 'version' => ($draft['version'] ?? 0) + 1, 'calendarVersion' => $this->store->policy($actor['unit'])['calendar']['version'], 'limit' => $preview['quota']['limit'], 'events' => [['at' => $now, 'text' => 'Pengajuan disetujui otomatis', 'actor' => 'Sistem']]];
             $this->store->saveRequest($leave);
             $this->store->audit($actor, 'SUBMIT', $id);
             $this->store->queueMail($leave, $input['category'] === 'REGULAR' ? 'REMINDER' : 'EMERGENCY', $preview['scheduledAt']);
@@ -81,8 +81,7 @@ final class LeaveService
             $reason = is_string($body['reason'] ?? null) ? trim($body['reason']) : '';
             $reviewer = in_array('SDM', $actor['roles'], true) && $actor['id'] !== $leave['employeeId'];
             if ($action === 'withdraw') {
-                CutiError::check($leave['status'] === 'PENDING_SDM', 'Pengajuan sudah diputuskan atau ditarik.', 409, 'REQUEST_ALREADY_DECIDED');
-                CutiError::check($actor['id'] === $leave['employeeId'], 'Hanya pemohon yang dapat menarik.', 403);
+                CutiError::check(false, 'Pengajuan yang sudah dikirim tidak dapat ditarik kembali.', 403, 'WITHDRAW_DISABLED');
                 $leave['status'] = 'WITHDRAWN';
                 $text = 'Pengajuan ditarik pemohon';
             } elseif ($action === 'cancel-request') {
