@@ -116,8 +116,8 @@ final class LeaveService
                 $leave['replacement'] = [...$leave['replacement'], 'notifiedAt' => $now, 'notifiedChannel' => $channel, 'notifiedBy' => $actor['name']];
                 $text = 'SDM mengabarkan penugasan kepada PGS ('.$leave['replacement']['employeeName'].') via '.$channel;
             } else {
-                CutiError::check($leave['status'] === 'PENDING_SDM', 'Pengajuan sudah diputuskan atau ditarik.', 409, 'REQUEST_ALREADY_DECIDED');
                 CutiError::check($reviewer, 'Review memerlukan SDM lain yang berwenang.', 403);
+                CutiError::check($leave['status'] === 'PENDING_SDM', 'Pengajuan sudah diputuskan atau ditarik.', 409, 'REQUEST_ALREADY_DECIDED');
                 if ($action === 'confirmation') {
                     CutiError::check($leave['category'] === 'REGULAR', 'Konfirmasi hanya untuk cuti reguler.');
                     CutiError::check(in_array($body['result'] ?? '', ['CONFIRMED', 'DECLINED'], true), 'Konfirmasi tidak valid.');

@@ -54,6 +54,17 @@ class CutiWorkflowTest extends TestCase
         $leave = $this->submit();
         $this->postJson('/api/leave-requests', [...$this->input(), 'fingerprint' => $this->postJson('/api/leave-requests/preview', $this->input())->json('fingerprint'), 'acceptAdjustment' => true])->assertCreated();
         $this->assertSame(1, DB::table('requests')->where('employee_id', 'employee')->count());
+        $this->assertSame('APPROVED', $leave['status']);
+
+        // Pengajuan tidak dapat ditarik kembali setelah disubmit
+        $this->actor('employee');
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson('/api/leave-requests/'.$leave['id'].'/withdraw', ['version' => $leave['version']])->assertForbidden();
+
+        $store = app(CutiStore::class);
+        $leave['status'] = 'PENDING_SDM';
+        $leave['confirmation'] = 'NOT_CONFIRMED';
+        $store->saveRequest($leave);
+
         $this->actor('sdm');
         $url = '/api/leave-requests/'.$leave['id'].'/decision';
         $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson($url, ['version' => 1, 'outcome' => 'APPROVED'])->assertUnprocessable();
@@ -95,6 +106,8 @@ class CutiWorkflowTest extends TestCase
     {
         $leave = $this->submit();
         $store = app(CutiStore::class);
+        $leave['status'] = 'PENDING_SDM';
+        $store->saveRequest($leave);
         $policy = $store->policy('KC01');
         $policy['replacementRules']['CS_BINA'] = ['position' => 'CS_BINA', 'enabled' => true, 'sourcePositions' => ['BM'], 'sameOutlet' => true, 'otherOutlets' => 'ALL', 'outletIds' => []];
         $store->savePolicy('KC01', $policy);
