@@ -74,10 +74,27 @@ test('pemohon langsung tercatat tanpa approval dan admin memonitor data cuti',as
   const verification=await admin.request.get('/api/verify-certificate?num='+encodeURIComponent(number));
   expect(await verification.json()).toMatchObject({valid:true,recordOnly:true,status:'RECORDED'});
   await admin.locator('nav').getByRole('button',{name:'Administrasi',exact:true}).click();
-  await admin.getByRole('row').filter({hasText:'public-ui@example.test'}).getByRole('button',{name:'Edit',exact:true}).click();
-  await expect(admin.getByLabel(/Kata sandi baru/)).toHaveCount(0);
-  await admin.getByRole('button',{name:'Simpan karyawan',exact:true}).click();
-  await expect(admin.getByRole('dialog')).toHaveCount(0);
+  const adminTabs=admin.locator('.list-toolbar .tabs').getByRole('button');
+  await expect(adminTabs).toHaveText(['Posisi','Outlet','Posisi & kuota']);
+  await expect(admin.getByRole('heading',{name:'Master posisi',exact:true})).toBeVisible();
+  await adminTabs.getByText('Outlet',{exact:true}).click();
+  await expect(admin.getByRole('heading',{name:'Outlet cabang',exact:true})).toBeVisible();
+  await expect(admin.getByText('Atur outlet, lalu tempatkan karyawan melalui menu Karyawan.')).toHaveCount(0);
+  await adminTabs.getByText('Posisi & kuota',{exact:true}).click();
+  await expect(admin.getByRole('heading',{name:'Kuota orang per posisi',exact:true})).toBeVisible();
+  await admin.reload();
+  await expect(admin.getByRole('heading',{name:'Kuota orang per posisi',exact:true})).toBeVisible();
+  for(const removedTab of ['employees','jobs']){
+    await admin.evaluate(tab=>sessionStorage.setItem('bni_cuti_admin_tab',tab),removedTab);
+    await admin.reload();
+    await expect(admin.getByRole('heading',{name:'Master posisi',exact:true})).toBeVisible();
+    await expect(adminTabs).toHaveText(['Posisi','Outlet','Posisi & kuota']);
+  }
+  await admin.screenshot({path:testInfo.outputPath('admin-settings-desktop.png'),fullPage:true,animations:'disabled'});
+  await admin.setViewportSize({width:390,height:844});
+  expect(await admin.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await admin.screenshot({path:testInfo.outputPath('admin-settings-mobile.png'),fullPage:true,animations:'disabled'});
+  await admin.setViewportSize({width:1280,height:900});
   await admin.getByRole('button',{name:'Profil saya',exact:true}).click();
   await admin.getByRole('button',{name:'Keluar dari akun',exact:true}).click();
   await expect(admin.getByRole('heading',{name:'Pengajuan cuti',exact:true})).toBeVisible();
