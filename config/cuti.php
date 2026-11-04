@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'public_form' => (bool) env('CUTI_PUBLIC_FORM', true),
     'demo' => (bool) env('DEMO_MODE', false),
     'mail_mode' => env('CUTI_MAIL_MODE', 'capture'),
     'allowed_email_domains' => array_values(array_filter(array_map('trim', explode(',', strtolower(env('ALLOWED_EMAIL_DOMAINS', '')))))),

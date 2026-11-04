@@ -27,7 +27,7 @@ final class MailOutbox
         try {
             $row = DB::table('requests')->where('id', $job->request_id)->first();
             $leave = $row ? CutiStore::decode($row->data) : null;
-            if (! $leave || ($job->kind === 'REMINDER' && ($leave['status'] !== 'PENDING_SDM' || $leave['confirmation'] !== 'NOT_CONFIRMED')) || ($job->kind === 'EMERGENCY' && $leave['status'] !== 'PENDING_SDM')) {
+            if (! $leave || ($job->kind === 'REMINDER' && ($leave['status'] !== 'PENDING_SDM' || $leave['confirmation'] !== 'NOT_CONFIRMED')) || ($job->kind === 'EMERGENCY' && $leave['status'] !== 'PENDING_SDM') || ($job->kind === 'RECORD_NOTICE' && $leave['status'] !== 'RECORDED')) {
                 DB::table('mail_jobs')->where('id', $job->id)->update(['state' => 'SKIPPED', 'lease_until' => null]);
 
                 return true;
@@ -36,21 +36,27 @@ final class MailOutbox
                 $employee = $this->store->employee($leave['replacement']['employeeId'] ?? '');
                 $recipients = ! empty($employee['email']) ? [$employee['email']] : [];
                 CutiError::check($recipients, 'NO_PGS_RECIPIENT');
-            } elseif ($job->kind === 'DECISION') {
+            } elseif (in_array($job->kind, ['DECISION', 'RECEIPT'], true)) {
                 $recipients = [$leave['email']];
             } else {
-                $recipients = array_column(array_filter($this->store->employees($job->unit_id), fn ($e) => $e['active'] && in_array('SDM', $e['roles'], true)), 'email');
+                $recipients = array_column(array_filter($this->store->employees($job->unit_id), fn ($e) => $e['active'] && CutiStore::canReview($e)), 'email');
             }
             CutiError::check($recipients, 'NO_SDM_RECIPIENT');
             $status = ($leave['cancellation']['status'] ?? '') === 'APPROVED' ? 'Pembatalan disetujui' : (($leave['cancellation']['status'] ?? '') === 'REJECTED' ? 'Pembatalan ditolak' : (['APPROVED' => 'Disetujui', 'REJECTED' => 'Ditolak', 'WITHDRAWN' => 'Ditarik'][$leave['status']] ?? 'Perlu review SDM'));
             $title = match ($job->kind) {
+                'RECEIPT' => 'Cuti tercatat',
+                'RECORD_NOTICE' => 'Informasi cuti tercatat',
                 'PGS_ASSIGNED' => 'Penugasan PGS',
                 'PGS_RELEASED' => 'Pembatalan tugas PGS',
                 'DECISION' => $status,
-                default => 'Perlu review SDM',
+                default => config('cuti.public_form') ? 'Informasi cuti' : 'Perlu review SDM',
             };
             $subject = '[BNI Cuti] '.$leave['number'].' · '.$title;
-            $body = $title."\nPengajuan: ".$leave['number']."\nKaryawan: ".$leave['employeeName']."\nTanggal efektif: ".$leave['effectiveStart'].' s.d. '.$leave['effectiveEnd']."\n".rtrim(config('app.url'), '/').'/?request='.rawurlencode($leave['id']);
+            $link = rtrim(config('app.url'), '/').'/?request='.rawurlencode($leave['id']);
+            if (config('cuti.public_form')) {
+                $link = in_array($job->kind, ['DECISION', 'RECEIPT'], true) ? 'Hubungi admin dengan nomor pengajuan di atas jika memerlukan informasi lebih lanjut.' : $link.'#login';
+            }
+            $body = $title."\nPengajuan: ".$leave['number']."\nKaryawan: ".$leave['employeeName']."\nTanggal efektif: ".$leave['effectiveStart'].' s.d. '.$leave['effectiveEnd']."\n".$link;
             $smtp = config('cuti.mail_mode') === 'smtp';
             foreach (array_unique($recipients) as $recipient) {
                 DB::table('mail_deliveries')->insertOrIgnore(['id' => (string) Str::uuid(), 'job_id' => $job->id, 'recipient' => $recipient, 'state' => 'QUEUED', 'subject' => $subject, 'body' => $body]);

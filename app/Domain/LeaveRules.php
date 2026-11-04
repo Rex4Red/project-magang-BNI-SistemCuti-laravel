@@ -6,7 +6,7 @@ use Carbon\CarbonImmutable;
 
 final class LeaveRules
 {
-    public const ACTIVE = ['PENDING_SDM', 'APPROVED'];
+    public const ACTIVE = ['PENDING_SDM', 'APPROVED', 'RECORDED'];
 
     public const PASSWORD_PATTERN = '/^(?=.*[A-Za-z])(?=.*[0-9]).{6,72}$/s';
 
@@ -68,7 +68,7 @@ final class LeaveRules
     {
         $relevant = array_filter($requests, fn ($leave) => $leave['position'] === $position && str_starts_with($leave['effectiveStart'], $month) && in_array($leave['status'], self::ACTIVE, true));
         $all = array_unique(array_column($relevant, 'employeeId'));
-        $approved = array_unique(array_column(array_filter($relevant, fn ($leave) => $leave['status'] === 'APPROVED'), 'employeeId'));
+        $approved = array_unique(array_column(array_filter($relevant, fn ($leave) => in_array($leave['status'], ['APPROVED', 'RECORDED'], true)), 'employeeId'));
 
         return ['position' => $position, 'label' => $position, 'limit' => $limit, 'used' => count($all), 'approved' => count($approved), 'pending' => count($all) - count($approved), 'available' => max(0, $limit - count($all)), 'alreadyCounted' => in_array($employeeId, $all, true)];
     }

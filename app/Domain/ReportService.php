@@ -15,7 +15,10 @@ final class ReportService
 {
     public function download(array $rows, array $actor, string $month, string $format): StreamedResponse
     {
-        $labels = ['PENDING_SDM' => 'Menunggu review', 'APPROVED' => 'Disetujui', 'REJECTED' => 'Ditolak', 'WITHDRAWN' => 'Ditarik'];
+        $labels = ['PENDING_SDM' => 'Menunggu review', 'APPROVED' => 'Disetujui', 'RECORDED' => 'Tercatat', 'REJECTED' => 'Ditolak', 'WITHDRAWN' => 'Ditarik'];
+        if (config('cuti.public_form')) {
+            $labels['PENDING_SDM'] = $labels['APPROVED'] = 'Tercatat';
+        }
         $headers = ['No.', 'Nomor pengajuan', 'Nama pegawai', 'Posisi', 'Kategori', 'Jenis cuti', 'Mulai', 'Akhir', 'Hari kerja', 'Status', 'Waktu Diajukan'];
         $data = [];
         foreach ($rows as $index => $leave) {

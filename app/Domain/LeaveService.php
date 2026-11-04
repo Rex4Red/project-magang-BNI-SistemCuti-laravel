@@ -36,6 +36,15 @@ final class LeaveService
         if (collect($local)->contains(fn ($r) => ReplacementService::assignedDuring($r, $actor['id']) && ReplacementService::overlaps($r['days'], $result['days']))) {
             $result['errors'][] = ['code' => 'PGS_DUTY', 'message' => 'Anda memiliki tugas PGS pada tanggal tersebut. Hubungi SDM sebelum mengajukan cuti.'];
         }
+        if (config('cuti.public_form') && ! $result['errors'] && ($policy['replacementRules'][$actor['position']]['enabled'] ?? false)) {
+            $replacement = $this->replacements->check([
+                ...$input, 'id' => '', 'employeeId' => $actor['id'], 'position' => $actor['position'],
+                'unit' => $actor['unit'], 'outletId' => CutiStore::outletId($actor), 'days' => $result['days'],
+            ], $policy);
+            if (! collect($replacement['candidates'])->contains('available', true)) {
+                $result['errors'][] = ['code' => 'NO_REPLACEMENT', 'message' => 'Belum ada PGS yang tersedia sesuai aturan posisi dan outlet. Pilih jadwal lain atau hubungi admin.'];
+            }
+        }
         $result['fingerprint'] = CutiStore::digest(['input' => $input, 'days' => $result['days'], 'calendar' => $policy['calendar'], 'position' => $actor['position'], 'unit' => $actor['unit'], 'today' => LeaveRules::today()]);
         if ($result['effectiveStart']) {
             $result['scheduledAt'] = LeaveRules::reminderAt($result['effectiveStart'], $input['category']);
@@ -64,14 +73,27 @@ final class LeaveService
             CutiError::check($location, 'Outlet karyawan tidak tersedia. Hubungi administrator.');
             $policy = $this->store->policy($actor['unit']);
             $requiresPgs = ($policy['replacementRules'][$actor['position']]['enabled'] ?? false);
-            $status = $requiresPgs ? 'PENDING_SDM' : 'APPROVED';
+            $recordOnly = (bool) config('cuti.public_form');
+            $status = $recordOnly ? 'RECORDED' : ($requiresPgs ? 'PENDING_SDM' : 'APPROVED');
             $now = LeaveRules::timestamp();
-            $eventText = $requiresPgs ? 'Pengajuan dikirim ke SDM' : 'Pengajuan disetujui otomatis';
-            $eventActor = $requiresPgs ? $actor['name'] : 'Sistem';
+            $eventText = $recordOnly ? 'Cuti tercatat melalui formulir' : ($requiresPgs ? 'Pengajuan dikirim untuk review' : 'Pengajuan disetujui otomatis');
+            $eventActor = $recordOnly || ! $requiresPgs ? 'Sistem' : $actor['name'];
             $leave = [...$input, 'id' => $id, 'number' => 'CT-'.str_replace('-', '', LeaveRules::today()).'-'.strtoupper(substr($id, 0, 6)), 'employeeId' => $actor['id'], 'employeeName' => $actor['name'], 'position' => $actor['position'], 'positionName' => $actor['positionName'] ?? $actor['position'], 'unit' => $actor['unit'], 'outletId' => $location['id'], 'outletName' => $location['name'], 'status' => $status, 'days' => $preview['days'], 'effectiveStart' => $preview['effectiveStart'], 'effectiveEnd' => $preview['effectiveEnd'], 'duration' => $preview['duration'], 'submittedAt' => $now, 'createdAt' => $draft['createdAt'] ?? $now, 'confirmation' => 'NOT_CONFIRMED', 'version' => ($draft['version'] ?? 0) + 1, 'calendarVersion' => $policy['calendar']['version'], 'limit' => $preview['quota']['limit'], 'events' => [['at' => $now, 'text' => $eventText, 'actor' => $eventActor]]];
+            if (config('cuti.public_form')) {
+                $leave['submittedVia'] = 'PUBLIC_FORM';
+                $leave['identityVerified'] = false;
+                if ($requiresPgs) {
+                    $leave['replacementCheckedAt'] = $now;
+                }
+            }
             $this->store->saveRequest($leave);
             $this->store->audit($actor, 'SUBMIT', $id);
-            $this->store->queueMail($leave, $input['category'] === 'REGULAR' ? 'REMINDER' : 'EMERGENCY', $preview['scheduledAt']);
+            if ($recordOnly) {
+                $this->store->queueMail($leave, 'RECEIPT', $now);
+                $this->store->queueMail($leave, 'RECORD_NOTICE', $preview['scheduledAt']);
+            } else {
+                $this->store->queueMail($leave, $input['category'] === 'REGULAR' ? 'REMINDER' : 'EMERGENCY', $preview['scheduledAt']);
+            }
 
             return $leave;
         });
@@ -81,10 +103,11 @@ final class LeaveService
     {
         return $this->store->mutate($actor, $key, ['id' => $id, 'action' => $action, 'body' => $body], function () use ($actor, $id, $action, $body) {
             $leave = $this->store->findLeave($actor, $id);
+            CutiError::check(! config('cuti.public_form') || ! in_array($action, ['confirmation', 'decision', 'cancel-request', 'cancel-abort', 'cancel-review'], true), 'Cuti langsung dicatat tanpa proses persetujuan.', 409, 'APPROVAL_DISABLED');
             CutiError::check(($body['version'] ?? null) === $leave['version'], 'Data sudah berubah. Muat ulang.', 409, 'STALE_VERSION');
             $now = LeaveRules::timestamp();
             $reason = is_string($body['reason'] ?? null) ? trim($body['reason']) : '';
-            $reviewer = in_array('SDM', $actor['roles'], true) && $actor['id'] !== $leave['employeeId'];
+            $reviewer = CutiStore::canReview($actor) && $actor['id'] !== $leave['employeeId'];
             if ($action === 'withdraw') {
                 CutiError::check(false, 'Pengajuan yang sudah dikirim tidak dapat ditarik kembali.', 403, 'WITHDRAW_DISABLED');
                 $leave['status'] = 'WITHDRAWN';
@@ -114,14 +137,14 @@ final class LeaveService
                 $leave['cancellation'] = [...$leave['cancellation'], 'status' => $body['outcome'], 'reviewedAt' => $now, 'reviewedBy' => $actor['name'], 'decisionReason' => mb_substr($reason, 0, 2000)];
                 $text = ($body['outcome'] === 'APPROVED' ? 'SDM menyetujui pembatalan cuti' : 'SDM menolak permohonan pembatalan cuti').($reason ? ': '.$reason : '');
             } elseif ($action === 'notify-pgs') {
-                CutiError::check(in_array('SDM', $actor['roles'], true), 'Hanya SDM yang dapat mengabarkan PGS.', 403);
+                CutiError::check(CutiStore::canReview($actor), 'Akses petugas review diperlukan.', 403);
                 CutiError::check($leave['status'] === 'APPROVED' && isset($leave['replacement']), 'Pengajuan harus sudah disetujui dan memiliki penugasan PGS.', 400);
                 $channel = is_string($body['channel'] ?? null) && trim($body['channel']) ? trim($body['channel']) : 'WhatsApp';
                 CutiError::check(mb_strlen($channel) <= 120, 'Kanal terlalu panjang.');
                 $leave['replacement'] = [...$leave['replacement'], 'notifiedAt' => $now, 'notifiedChannel' => $channel, 'notifiedBy' => $actor['name']];
                 $text = 'SDM mengabarkan penugasan kepada PGS ('.$leave['replacement']['employeeName'].') via '.$channel;
             } else {
-                CutiError::check($reviewer, 'Review memerlukan SDM lain yang berwenang.', 403);
+                CutiError::check($reviewer, 'Review memerlukan petugas lain yang berwenang.', 403);
                 CutiError::check($leave['status'] === 'PENDING_SDM', 'Pengajuan sudah diputuskan atau ditarik.', 409, 'REQUEST_ALREADY_DECIDED');
                 if ($action === 'confirmation') {
                     CutiError::check($leave['category'] === 'REGULAR', 'Konfirmasi hanya untuk cuti reguler.');
@@ -160,7 +183,8 @@ final class LeaveService
                     }
                     $leave['status'] = $body['outcome'];
                     $leave['decisionReason'] = mb_substr($reason, 0, 2000);
-                    $text = $body['outcome'] === 'APPROVED' ? 'Pengajuan disetujui SDM'.(isset($leave['replacement']) ? ' (PGS: '.$leave['replacement']['employeeName'].')' : '') : 'Pengajuan ditolak SDM';
+                    $reviewerLabel = config('cuti.public_form') ? 'admin' : 'SDM';
+                    $text = $body['outcome'] === 'APPROVED' ? 'Pengajuan disetujui '.$reviewerLabel.(isset($leave['replacement']) ? ' (PGS: '.$leave['replacement']['employeeName'].')' : '') : 'Pengajuan ditolak '.$reviewerLabel;
                 } else {
                     throw new CutiError('Aksi tidak ditemukan.', 404);
                 }

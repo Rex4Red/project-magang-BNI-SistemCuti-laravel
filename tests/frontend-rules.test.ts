@@ -5,6 +5,13 @@ const input:LeaveInput={category:'REGULAR',subtype:'Keluarga',reason:'Keperluan 
 const calculate=(override:Partial<LeaveInput>={},all:Leave[]=[],limit=2,today='2026-09-01',calendar=DEFAULT_CALENDAR)=>evaluate({...input,...override},employee,all,calendar,limit,today);
 function request(id:string,days:string[],extra:Partial<Leave>={}):Leave{return {...input,id,number:id,employeeId:id,employeeName:id,position:employee.position,unit:employee.unit,status:'PENDING_SDM',days,effectiveStart:days[0],effectiveEnd:days.at(-1)!,duration:days.length,submittedAt:'2026-09-01T00:00:00Z',createdAt:'2026-09-01T00:00:00Z',confirmation:'NOT_CONFIRMED',version:1,calendarVersion:1,limit:2,events:[],...extra};}
 describe('Tanggal dan cutoff hari kerja',()=>{
+  it('cuti tercatat langsung mengurangi kuota dan mencegah jadwal bertabrakan',()=>{
+    const recorded=request('other',['2026-10-05','2026-10-06','2026-10-07'],{status:'RECORDED'});
+    expect(quotaFor(employee.position,'2026-10',[recorded],1).available).toBe(0);
+    const result=calculate({start:'2026-10-05',end:'2026-10-07'},[recorded],1);
+    expect(result.errors.map(error=>error.code)).toContain('QUOTA_EXCEEDED');
+    expect(result.errors.map(error=>error.code)).toContain('IDENTICAL_RANGE');
+  });
   it('menghitung H-3 Oktober 28–30 dan September 28–30',()=>{expect(blockedDays('2026-10',DEFAULT_CALENDAR)).toEqual(['2026-10-28','2026-10-29','2026-10-30']);expect(blockedDays('2026-09',DEFAULT_CALENDAR)).toEqual(['2026-09-28','2026-09-29','2026-09-30']);});
   it('memotong 26–30 Oktober menjadi 2 hari',()=>{const p=calculate({start:'2026-10-26',end:'2026-10-30'});expect(p.days).toEqual(['2026-10-26','2026-10-27']);expect(p.adjusted).toBe(true);expect(p.errors).toEqual([]);});
   it('libur 30 Oktober menggeser H-3 ke 27–29',()=>{const c={...DEFAULT_CALENDAR,exceptions:{'2026-10-30':{working:false,label:'Fixture'}}};expect(blockedDays('2026-10',c)).toEqual(['2026-10-27','2026-10-28','2026-10-29']);expect(calculate({start:'2026-10-26',end:'2026-10-30'},[],2,'2026-09-01',c).duration).toBe(1);});

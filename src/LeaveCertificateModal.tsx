@@ -8,10 +8,11 @@ type Props={
   leave:Leave;
   unitName:string;
   positionName?:string;
+  recordOnly?:boolean;
   onClose:()=>void;
 };
 
-export function LeaveCertificateModal({leave:r,unitName,positionName,onClose}:Props){
+export function LeaveCertificateModal({leave:r,unitName,positionName,recordOnly=false,onClose}:Props){
   const printDoc=()=>{
     window.print();
   };
@@ -48,7 +49,7 @@ export function LeaveCertificateModal({leave:r,unitName,positionName,onClose}:Pr
             </div>
             <div className="letterhead-text">
               <h3>PT BANK NEGARA INDONESIA (PERSERO) Tbk</h3>
-              <h4>DIVISI SUMBER DAYA MANUSIA</h4>
+              <h4>{recordOnly?'SISTEM PENCATATAN CUTI':'DIVISI SUMBER DAYA MANUSIA'}</h4>
               <p>{unitName.toUpperCase()}</p>
             </div>
           </div>
@@ -59,12 +60,12 @@ export function LeaveCertificateModal({leave:r,unitName,positionName,onClose}:Pr
 
           {/* Title */}
           <div className="doc-heading">
-            <h2>SURAT KETERANGAN PERSETUJUAN CUTI</h2>
+            <h2>{recordOnly?'BUKTI PENCATATAN CUTI':'SURAT KETERANGAN PERSETUJUAN CUTI'}</h2>
             <span className="doc-num">Nomor: {docNumber}</span>
           </div>
 
           <p className="doc-intro">
-            Berdasarkan verifikasi sistem manajemen kehadiran dan kuota kerja perbankan, dengan ini diterangkan bahwa pengajuan cuti pegawai berikut telah <strong>DISETUJUI</strong>:
+            {recordOnly?<>Data cuti pegawai berikut telah <strong>TERCATAT</strong> dalam sistem berdasarkan isian formulir dan pemeriksaan aturan cuti:</>:<>Berdasarkan verifikasi sistem manajemen kehadiran dan kuota kerja perbankan, dengan ini diterangkan bahwa pengajuan cuti pegawai berikut telah <strong>DISETUJUI</strong>:</>}
           </p>
 
           {/* Employee & Leave Details Table */}
@@ -126,8 +127,8 @@ export function LeaveCertificateModal({leave:r,unitName,positionName,onClose}:Pr
             <div className="official-stamp">
               <CheckCircle2 size={22} color="#0e8362"/>
               <div>
-                <strong>DISETUJUI SECARA ELEKTRONIK</strong>
-                <small>Validitas Terjamin Sistem Ruang Cuti BNI</small>
+                <strong>{recordOnly?'TERCATAT DALAM SISTEM':'DISETUJUI SECARA ELEKTRONIK'}</strong>
+                <small>{recordOnly?'Bukti pencatatan cuti':'Validitas Terjamin Sistem Ruang Cuti BNI'}</small>
               </div>
             </div>
           </div>
@@ -140,7 +141,7 @@ export function LeaveCertificateModal({leave:r,unitName,positionName,onClose}:Pr
                 <small>
                   <strong>Kode Validasi Digital:</strong><br/>
                   {r.number}<br/>
-                  Pindai kode QR untuk memastikan keaslian surat persetujuan cuti ini.
+                  {recordOnly?'Pindai kode QR untuk memeriksa pencatatan cuti ini.':'Pindai kode QR untuk memastikan keaslian surat persetujuan cuti ini.'}
                 </small>
               </div>
             </div>
@@ -148,15 +149,15 @@ export function LeaveCertificateModal({leave:r,unitName,positionName,onClose}:Pr
             <div className="signature-box">
               <p>Diterbitkan pada: {fmtDate(r.effectiveStart.slice(0,10))}</p>
               <div className="signature-space">
-                <span className="digital-sign-tag">Ditandatangani Secara Elektronik</span>
+                <span className="digital-sign-tag">{recordOnly?'Dicatat otomatis oleh sistem':'Ditandatangani Secara Elektronik'}</span>
               </div>
-              <strong>DIVISI SUMBER DAYA MANUSIA</strong>
+              <strong>{recordOnly?'ADMINISTRASI CUTI':'DIVISI SUMBER DAYA MANUSIA'}</strong>
               <p style={{fontSize:11,margin:'2px 0 0',color:'#6b7e85'}}>PT Bank Negara Indonesia (Persero) Tbk</p>
             </div>
           </div>
 
           <div className="doc-footnote">
-            <small>Surat keterangan ini diterbitkan otomatis oleh Sistem Informasi Ruang Cuti BNI dan sah tanpa tanda tangan basah serta stempel manual.</small>
+            <small>{recordOnly?'Bukti ini menunjukkan bahwa data cuti telah tercatat dalam sistem.':'Surat keterangan ini diterbitkan otomatis oleh Sistem Informasi Ruang Cuti BNI dan sah tanpa tanda tangan basah serta stempel manual.'}</small>
           </div>
         </div>
       </div>

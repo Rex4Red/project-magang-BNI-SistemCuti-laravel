@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
+import {createContext,useContext,useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
 import {ArrowDownToLine,ArrowRight,ArrowUpRight,Bell,CalendarDays,Check,CheckCheck,ChevronDown,ChevronLeft,ChevronRight,Clock,Clock3,FileSpreadsheet,FileText,Home,Info,LayoutGrid,LogOut,Menu,Plus,Search,Settings2,ShieldCheck,Users,X,Mail,Send,BriefcaseBusiness,CheckCircle2,AlertCircle,SlidersHorizontal,Leaf,Save,Phone,MessageCircle,MessageSquare,Copy,RotateCcw,XCircle,UserCheck,Printer,BarChart3} from 'lucide-react';
 import {ACTIVE,PASSWORD_PATTERN,PASSWORD_HINT,POSITIONS,addMonths,dateOnly,isWorking,monthDays,positionLabel,statusLabel,calculateMaxEndDate,getValidEndDates,blockedDays,validDate,type Employee,type Leave,type LeaveInput,type Preview,type Quota} from '../shared/domain';
 import {api,action,ApiError} from './api';
@@ -11,6 +11,7 @@ import {ChangePassword} from './ChangePassword';
 import {LeaveCertificateModal} from './LeaveCertificateModal';
 import {SdmAnalytics} from './SdmAnalytics';
 import {VerifyCertificate} from './VerifyCertificate';
+import {PublicLeaveForm} from './PublicLeaveForm';
 import type {ReplacementCheck} from '../shared/domain';
 const fmt=(d:string,full=false)=>d?new Intl.DateTimeFormat('id-ID',{day:'numeric',month:full?'long':'short',...(full?{year:'numeric'}:{})}).format(new Date(d+'T00:00:00')):'—';
 const fmtDateTimeDate=(iso?:string)=>{
@@ -31,7 +32,10 @@ const fmtDateTimeTime=(iso?:string)=>{
 };
 const monthLabel=(m:string)=>new Intl.DateTimeFormat('id-ID',{month:'long',year:'numeric'}).format(new Date(m+'-01T00:00:00'));
 const initials=(name:string)=>name.split(' ').slice(0,2).map(n=>n[0]).join('');
+const RecordingContext=createContext(false);
 const Badge=({status,cancellation}:{status:Leave['status'];cancellation?:Leave['cancellation']})=>{
+  const recording=useContext(RecordingContext);
+  if(status==='RECORDED'||(recording&&ACTIVE.includes(status)))return <span className="badge recorded"><span/>Tercatat</span>;
   if(status==='APPROVED'&&cancellation?.status==='PENDING')return <span className="badge pending_sdm"><span/>Menunggu batal SDM</span>;
   if(status==='WITHDRAWN'&&cancellation?.status==='APPROVED')return <span className="badge withdrawn"><span/>Dibatalkan</span>;
   return <span className={'badge '+status.toLowerCase()}><span/>{statusLabel[status]}</span>;
@@ -49,6 +53,7 @@ function getInitialAdminTab():AdminTab{
   return 'employees';
 }
 function ReportDownloadMenu({month,requests,user,unitName,positionLabelFn}:{month:string;requests?:Leave[];user:Employee;unitName:string;positionLabelFn?:(pos:string)=>string}){
+  const recording=useContext(RecordingContext);
   const [open,setOpen]=useState(false);
   const [pdfBusy,setPdfBusy]=useState(false);
   const [pdfError,setPdfError]=useState('');
@@ -68,9 +73,9 @@ function ReportDownloadMenu({month,requests,user,unitName,positionLabelFn}:{mont
     setPdfBusy(true);setPdfError('');
     try{
       const list=requests||[];
-      const relevantRows=list.filter((r:Leave)=>(month==='all'||(r.effectiveStart||r.start||'').startsWith(month))&&r.status!=='DRAFT');
+      const relevantRows=list.filter((r:Leave)=>(month==='all'||(r.effectiveStart||r.start||'').startsWith(month))&&r.status!=='DRAFT').map(r=>recording&&ACTIVE.includes(r.status)?{...r,status:'RECORDED' as const}:r);
       const {downloadPdfReport} = await import('./reportPdf');
-      downloadPdfReport({rows:relevantRows,actor:user,month,unitName:unitName||'Kantor Cabang',positionLabelFn});
+      downloadPdfReport({rows:relevantRows,actor:user,month,unitName:unitName||'Kantor Cabang',positionLabelFn,recordOnly:recording});
       setOpen(false);
     }catch{
       setPdfError('PDF belum berhasil dibuat. Coba lagi.');
@@ -138,11 +143,14 @@ function getInitialMonth():string{
   return addMonths(dateOnly().slice(0,7)+'-01',1).slice(0,7);
 }
 export default function App(){
+  const [showAdminLogin,setShowAdminLogin]=useState(()=>window.location.hash==='#login');
+  useEffect(()=>{const change=()=>setShowAdminLogin(window.location.hash==='#login');window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[]);
   const [config,setConfig]=useState<any>(null);const [user,setUser]=useState<Employee|null>(null);const [boot,setBoot]=useState(true);const [page,setPage]=useState<Page>(getInitialPage);
   const [adminTab,setAdminTab]=useState<AdminTab>(getInitialAdminTab);
   const [isVerify,setIsVerify]=useState(()=>window.location.hash.startsWith('#verify')||new URLSearchParams(window.location.search).has('verify'));
-  const [requestMonth,setRequestMonth]=useState('');const [month,setMonth]=useState(getInitialMonth);const [data,setData]=useState<any>(null);const [refresh,setRefresh]=useState(0);const [error,setError]=useState('');const [toast,setToast]=useState('');const [selected,setSelected]=useState<Leave|null>(null);const [draft,setDraft]=useState<Leave|null>(null);const [menu,setMenu]=useState(false);const [loading,setLoading]=useState(false);  const sdm=user?.roles.includes('SDM');const admin=user?.roles.includes('ADMIN');
+  const [requestMonth,setRequestMonth]=useState('');const [month,setMonth]=useState(getInitialMonth);const [data,setData]=useState<any>(null);const [refresh,setRefresh]=useState(0);const [error,setError]=useState('');const [toast,setToast]=useState('');const [selected,setSelected]=useState<Leave|null>(null);const [draft,setDraft]=useState<Leave|null>(null);const [menu,setMenu]=useState(false);const [loading,setLoading]=useState(false);  const sdm=config?.publicForm?user?.roles.includes('ADMIN'):user?.roles.includes('SDM');const admin=user?.roles.includes('ADMIN');
   const canViewRequests=Boolean(sdm||(!admin&&user?.roles.includes('EMPLOYEE')));
+  useEffect(()=>{if(user)setShowAdminLogin(false);},[user]);
   useEffect(()=>{
     let alive = true;
     let attempts = 0;
@@ -235,14 +243,15 @@ export default function App(){
   const newLeave=()=>{setDraft(null);nav('form');};
   if(boot)return <div className="boot"><span className="bni-logo"><img src="/images/bni-logo.png" alt="BNI" /></span><p>Menyiapkan ruang kerja Anda…</p></div>;
   if(isVerify)return <VerifyCertificate onBack={()=>{setIsVerify(false);window.location.hash='';}}/>;
+  if(!user&&config?.publicForm&&!showAdminLogin)return <PublicLeaveForm DatePicker={DatePicker} onAdmin={()=>setShowAdminLogin(true)}/>;
   if(!user)return <Login config={config} onLogin={u=>{
     try{sessionStorage.removeItem('bni_cuti_popup_seen:'+u.id);}catch{}
     setData(null);
     setSelected(null);
     setUser(u);
-    const target=u.roles.includes('SDM')?'dashboard':getInitialPage();
+    const target=config?.publicForm||u.roles.includes('SDM')?'dashboard':getInitialPage();
     const uAdmin=u.roles.includes('ADMIN');
-    const uCanRequests=u.roles.includes('SDM')||(!uAdmin&&u.roles.includes('EMPLOYEE'));
+    const uCanRequests=(config?.publicForm&&uAdmin)||u.roles.includes('SDM')||(!uAdmin&&u.roles.includes('EMPLOYEE'));
     const targetPage=(target==='admin'&&!uAdmin)?'dashboard':(target==='requests'&&!uCanRequests)?'dashboard':(target==='form'&&uAdmin)?'dashboard':target;
     setPage(targetPage);
     try{
@@ -258,16 +267,16 @@ export default function App(){
     ...(canViewRequests?[['requests',FileText,sdm?'Pengajuan cuti':'Pengajuan saya'] as [Page,typeof Home,string]]:[]),
     ['calendar',CalendarDays,'Kalender cuti']
   ];
-  const pending=data?.requests?.filter((r:Leave)=>r.status==='PENDING_SDM'||(sdm&&r.status==='APPROVED'&&r.cancellation?.status==='PENDING')).length??0;
-  return <DirectoryContext.Provider value={data?.positions??POSITIONS}><div className="app-shell">
-    {sdm&&data&&<NewLeavePopup key={user.id+':'+user.unit} requests={data.requests} userId={user.id} visible={page==='dashboard'&&!selected&&!menu} onSelect={setSelected}/>}
+  const pending=config?.publicForm?0:data?.requests?.filter((r:Leave)=>r.status==='PENDING_SDM'||(sdm&&r.status==='APPROVED'&&r.cancellation?.status==='PENDING')).length??0;
+  return <RecordingContext.Provider value={!!config?.publicForm}><DirectoryContext.Provider value={data?.positions??POSITIONS}><div className="app-shell">
+    {!config?.publicForm&&sdm&&data&&<NewLeavePopup key={user.id+':'+user.unit} requests={data.requests} userId={user.id} visible={page==='dashboard'&&!selected&&!menu} onSelect={setSelected}/>}
     {menu&&<div className="menu-scrim" onClick={()=>setMenu(false)}/>}
     <aside className={'sidebar '+(menu?'open':'')}><div className="brand"><span className="bni-logo"><img src="/images/bni-logo.png" alt="BNI" /></span></div>
-      <div className="workspace"><div className="workspace-icon"><BriefcaseBusiness size={19}/></div><div><strong>{sdm?'Ruang kerja SDM':admin?'Administrator':'Ruang karyawan'}</strong><small>{data?.outletName??'Memuat outlet…'}</small></div></div>
+      <div className="workspace"><div className="workspace-icon"><BriefcaseBusiness size={19}/></div><div><strong>{admin?'Administrator':sdm?'Ruang kerja SDM':'Ruang karyawan'}</strong><small>{data?.outletName??'Memuat outlet…'}</small></div></div>
       <nav>{navItems.map(([id,Icon,label])=><button key={id} className={page===id?'active':''} onClick={()=>nav(id)}><Icon size={19}/><span>{label}</span>{id==='requests'&&pending>0&&<b className="nav-count">{pending}</b>}</button>)}{!admin&&<button className={page==='form'?'active':''} onClick={newLeave}><Plus size={19}/><span>Ajukan cuti</span></button>}{admin&&<button className={page==='admin'?'active':''} onClick={()=>nav('admin')}><Settings2 size={19}/><span>Administrasi</span></button>}</nav>
-      <div className="sidebar-bottom"><button className="user-card" onClick={()=>nav('profile')}><span className="avatar teal">{initials(user.name)}</span><span><strong>{user.name}</strong><small>{sdm?'Divisi Sumber Daya Manusia':positionLabel(user.position)}</small></span><ChevronRight size={16}/></button></div>
+      <div className="sidebar-bottom"><button className="user-card" onClick={()=>nav('profile')}><span className="avatar teal">{initials(user.name)}</span><span><strong>{user.name}</strong><small>{admin?'Pengelola cuti':sdm?'Divisi Sumber Daya Manusia':positionLabel(user.position)}</small></span><ChevronRight size={16}/></button></div>
     </aside>
-    <div className="main-shell"><header className="topbar"><button className="icon-button mobile-menu" aria-label="Buka menu" onClick={()=>setMenu(true)}><Menu/></button><div className="breadcrumb"><strong>{pageTitles[page]}</strong></div><div className="top-actions"><span className="today">{fmt(data?.today??config?.today??dateOnly(),true)}</span><button className="icon-button notification-button" aria-label="Notifikasi" onClick={()=>nav(admin?'admin':'notifications')}><Bell size={20}/>{pending>0&&<i/>}</button><button className="avatar small teal" aria-label="Profil saya" onClick={()=>nav('profile')}>{initials(user.name)}</button></div></header>
+    <div className="main-shell"><header className="topbar"><button className="icon-button mobile-menu" aria-label="Buka menu" onClick={()=>setMenu(true)}><Menu/></button><div className="breadcrumb"><strong>{pageTitles[page]}</strong></div><div className="top-actions"><span className="today">{fmt(data?.today??config?.today??dateOnly(),true)}</span><button className="icon-button notification-button" aria-label="Notifikasi" onClick={()=>nav(sdm?'notifications':admin?'admin':'notifications')}><Bell size={20}/>{pending>0&&<i/>}</button><button className="avatar small teal" aria-label="Profil saya" onClick={()=>nav('profile')}>{initials(user.name)}</button></div></header>
       <main className={page==='calendar'?'calendar-page':undefined}><div className="page-heading"><div><h1>{pageTitles[page]}</h1></div>{['dashboard','requests','calendar'].includes(page)&&<div className="heading-actions"><label className="month-control"><CalendarDays size={17}/><input aria-label="Bulan monitoring" type="month" value={month} onChange={e=>{if(e.target.value)setMonth(e.target.value);}}/></label>{page==='requests'&&<label className="month-control"><CalendarDays size={17}/><select aria-label="Filter bulan pengajuan" value={requestMonth} onChange={e=>setRequestMonth(e.target.value)}><option value="">Semua bulan</option>{Array.from(new Set<string>((data?.requests??[]).map((r:Leave)=>(r.effectiveStart||r.start).slice(0,7)).filter((m:string)=>/^\d{4}-\d{2}$/.test(m)))).sort().reverse().map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>}{page==='requests'&&sdm?<ReportDownloadMenu month={requestMonth||'all'} requests={data?.requests??[]} user={user} unitName={data?.unitName??'Kantor Cabang'} positionLabelFn={positionLabel}/>:!sdm&&!admin&&<button className="button primary" onClick={newLeave}><Plus size={18}/>Ajukan cuti</button>}</div>}</div>
       {error&&<div className="alert danger" role="alert">{error}<button onClick={reload}>Coba lagi</button></div>}
       {loading&&!data?<div className="skeleton-grid"><div/><div/><div/></div>:data&&<>
@@ -277,37 +286,41 @@ export default function App(){
         {page==='form'&&<LeaveForm key={draft?.id??'new'} user={user} today={data.today} draft={draft} calendar={data.calendarConfig} onDelete={()=>{reload();nav('requests');setToast('Draft dihapus.');}} onDone={r=>{if(r.effectiveStart)setMonth(r.effectiveStart.slice(0,7));reload();setSelected(r.status==='DRAFT'?null:r);nav('requests');setToast(r.status==='DRAFT'?'Draft tersimpan.':'Pengajuan berhasil dikirim ke SDM.');}}/>}
         {page==='profile'&&<section className="panel profile-panel"><span className="avatar large teal">{initials(user.name)}</span><h2>{user.name}</h2><p>{positionLabel(user.position)} • {data.outletName}</p><dl><dt>Email</dt><dd>{user.email}</dd><dt>Nomor HP</dt><dd>{user.phone}</dd><dt>Hak akses</dt><dd>{user.roles.join(', ')}</dd></dl><div className="alert info"><Info size={18}/>Perubahan kontak pada pengajuan tidak mengubah profil ini. Hubungi administrator untuk memperbarui profil.</div><div className="inline-actions"><ChangePassword onSuccess={()=>setToast('Kata sandi berhasil diubah.')}/><button className="button secondary" onClick={async()=>{await action('/logout',{});setUser(null);setData(null);setPage('dashboard');try{sessionStorage.removeItem('bni_cuti_page');history.replaceState(null,'',window.location.pathname+window.location.search);}catch{}}}><LogOut size={17}/>Keluar dari akun</button></div></section>}
         {page==='notifications'&&<section className="panel"><div className="panel-heading"><h2>Aktivitas pengajuan</h2><span className="muted">Status terbaru</span></div>{data.requests.length?data.requests.filter((r:Leave)=>r.status!=='DRAFT').slice(0,15).map((r:Leave)=>{const isPgsAssignment=r.replacement?.employeeId===user.id&&r.employeeId!==user.id;return <button className="activity-row" key={r.id} onClick={()=>setSelected(r)}><span className="activity-icon"><Bell size={18}/></span><span><strong>{isPgsAssignment?`Tugas PGS: ${r.employeeName}`:r.employeeName} • {r.number}</strong><small>{isPgsAssignment?`Anda ditugaskan sebagai PGS · ${fmt(r.effectiveStart)} – ${fmt(r.effectiveEnd)}`:`${r.events.at(-1)?.text} · ${fmt(r.effectiveStart)}`}</small></span>{isPgsAssignment?<span className="badge approved"><span/>Tugas PGS</span>:<Badge status={r.status} cancellation={r.cancellation}/>}</button>;}):<Empty title="Belum ada aktivitas"/>}</section>}
-        {page==='admin'&&admin&&<Admin tab={adminTab} onTabChange={changeAdminTab} onChange={reload} onToast={setToast} today={data.today} userId={user.id}/>}
+        {page==='admin'&&admin&&<Admin tab={adminTab} onTabChange={changeAdminTab} onChange={reload} onToast={setToast} today={data.today} userId={user.id} publicForm={!!config?.publicForm}/>}
       </>}
 
       </main>
     </div>
     {toast&&<div className="toast" role="status"><CheckCircle2 size={19}/>{toast}</div>}
-    {selected&&<Detail leave={selected} user={user} today={data?.today??dateOnly()} unitName={data?.unitName??'Kantor Cabang'} onClose={()=>setSelected(null)} onCopy={()=>{setDraft({...selected,id:'',status:'DRAFT',version:0});setSelected(null);nav('form');}} onUpdate={(r:Leave,msg?:string)=>{setSelected(r);reload();setToast(msg||'Pengajuan berhasil diperbarui.');}}/>}
-  </div></DirectoryContext.Provider>;
+    {selected&&(config?.publicForm?<RecordedLeaveDetail leave={selected} unitName={data?.unitName??'Kantor Cabang'} onClose={()=>setSelected(null)}/>:<Detail leave={selected} user={user} today={data?.today??dateOnly()} unitName={data?.unitName??'Kantor Cabang'} onClose={()=>setSelected(null)} onCopy={()=>{setDraft({...selected,id:'',status:'DRAFT',version:0});setSelected(null);nav('form');}} onUpdate={(r:Leave,msg?:string)=>{setSelected(r);reload();setToast(msg||'Pengajuan berhasil diperbarui.');}}/>)}
+  </div></DirectoryContext.Provider></RecordingContext.Provider>;
 }
 function Login({config,onLogin}:{config:any;onLogin:(u:Employee)=>void}){
   const [email,setEmail]=useState('');const [password,setPassword]=useState('');const [error,setError]=useState('');const [busy,setBusy]=useState(false);
   async function login(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{onLogin(await action('/login',{email,password}));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
-  return <div className="login"><div className="login-main"><div className="login-box"><span className="bni-logo"><img src="/images/bni-logo.png" alt="BNI" /></span><h2>Ruang Cuti</h2><form onSubmit={login}><Field label="Email karyawan"><input type="email" autoComplete="username" placeholder="nama@perusahaan.co.id" value={email} onChange={e=>setEmail(e.target.value)} required/></Field><Field label="Kata sandi"><input type="password" autoComplete="current-password" placeholder="Masukkan kata sandi" value={password} onChange={e=>setPassword(e.target.value)} required/></Field>{error&&<div className="alert danger" role="alert">{error}</div>}<button className="button primary full" disabled={busy}>{busy?'Memeriksa akun…':'Masuk'}<ArrowRight size={18}/></button></form>{config?.demo&&<div className="demo-accounts"><span>AKUN DEMO</span><div>{[['SDM','sdm'],['Karyawan','karyawan'],['Admin','admin']].map(([label,account])=><button key={account} onClick={()=>{setEmail(account+'@demo.bni.local');setPassword('BniCuti!2026');setError('');}}>{label}<ArrowUpRight size={13}/></button>)}</div><small>Data contoh untuk uji coba.</small></div>}</div></div></div>;
+  return <div className="login"><div className="login-main"><div className="login-box"><span className="bni-logo"><img src="/images/bni-logo.png" alt="BNI" /></span><h2>{config?.publicForm?'Masuk admin':'Ruang Cuti'}</h2><form onSubmit={login}><Field label={config?.publicForm?'Email admin':'Email karyawan'}><input type="email" autoComplete="username" placeholder="nama@perusahaan.co.id" value={email} onChange={e=>setEmail(e.target.value)} required/></Field><Field label="Kata sandi"><input type="password" autoComplete="current-password" placeholder="Masukkan kata sandi" value={password} onChange={e=>setPassword(e.target.value)} required/></Field>{error&&<div className="alert danger" role="alert">{error}</div>}<button className="button primary full" disabled={busy}>{busy?'Memeriksa akun…':'Masuk'}<ArrowRight size={18}/></button></form>{config?.publicForm&&<a className="public-back-link" href="#form">Kembali ke formulir cuti</a>}{config?.demo&&<div className="demo-accounts"><span>AKUN DEMO</span><div>{(config?.publicForm?[['Admin','admin']]:[['SDM','sdm'],['Karyawan','karyawan'],['Admin','admin']]).map(([label,account])=><button key={account} onClick={()=>{setEmail(account+'@demo.bni.local');setPassword('BniCuti!2026');setError('');}}>{label}<ArrowUpRight size={13}/></button>)}</div><small>Data contoh untuk uji coba.</small></div>}</div></div></div>;
 }
 function Dashboard({data,month,sdm,onSelect,onRequests,onCalendar,admin,onAdmin,userId}:any){
+  const recording=useContext(RecordingContext);
   const [sdmTab,setSdmTab]=useState<'overview'|'analytics'>('overview');
   const current:Leave[]=(data?.requests??[]).filter((r:Leave)=>(r.effectiveStart||r.start||'').startsWith(month)&&r.status!=='DRAFT');const waiting=current.filter(r=>r.status==='PENDING_SDM');const approved=current.filter(r=>r.status==='APPROVED');const quotas:Quota[]=data?.quotas??[];
   return <>
-    {sdm&&<div className="sdm-dashboard-tabs">
+    {sdm&&!recording&&<div className="sdm-dashboard-tabs">
       <button type="button" className={'sdm-tab-btn '+(sdmTab==='overview'?'active':'')} onClick={()=>setSdmTab('overview')}>
         <LayoutGrid size={15}/>Ikhtisar Operasional
       </button>
       <button type="button" className={'sdm-tab-btn '+(sdmTab==='analytics'?'active':'')} onClick={()=>setSdmTab('analytics')}>
-        <BarChart3 size={15}/>Analitik & Tren SDM
+        <BarChart3 size={15}/>Analitik cuti
       </button>
     </div>}
-    {sdm&&sdmTab==='analytics'?(
+    {sdm&&!recording&&sdmTab==='analytics'?(
       <SdmAnalytics data={data} month={month} onSelect={onSelect}/>
     ):(<>
-    <div className="stats-grid">{[
-      ...(admin&&!sdm?[
+    <div className={'stats-grid'+(recording?' recording-stats':'')}>{[
+      ...(recording?[
+        {label:'Cuti tercatat',value:current.filter(r=>ACTIVE.includes(r.status)).length,unit:'pengajuan'},
+        {label:'Karyawan cuti',value:new Set(current.filter(r=>ACTIVE.includes(r.status)).map(r=>r.employeeId)).size,unit:'orang'},
+      ]:admin&&!sdm?[
         {label:'Total posisi',value:quotas.length,unit:'posisi'},
         {label:'Karyawan cuti disetujui',value:quotas.reduce((s,q)=>s+q.approved,0),unit:'orang'},
         {label:'Total kuota limit',value:quotas.reduce((s,q)=>s+q.limit,0),unit:'orang'},
@@ -346,8 +359,8 @@ function Dashboard({data,month,sdm,onSelect,onRequests,onCalendar,admin,onAdmin,
             <ArrowUpRight size={15} style={{marginLeft:'auto',color:'#95a5ab'}}/>
           </button>
         </div>
-      </section>:<section className="panel requests-panel"><div className="panel-heading"><div><h2>{sdm?'Pengajuan terbaru':'Pengajuan Anda'} <span className="count-bubble">{current.length}</span></h2></div><button className="text-button" onClick={onRequests}>Lihat semua<ArrowRight size={15}/></button></div><RequestTable requests={current.slice(0,5)} onSelect={onSelect} compact userId={userId}/></section>}
-      <section className="panel quota-panel"><div className="panel-heading"><div><h2>Kuota per posisi</h2><p>{monthLabel(month)} · dalam orang</p></div><Users size={19} className="muted"/></div><div className="quota-list">{quotas.slice(0,sdm?6:14).map(q=><div className="quota-row" key={q.position}><div><strong>{q.label}</strong><span><b>{q.used}</b> / {q.limit} <small>orang</small></span></div><div className="progress-track"><span style={{width:(q.limit?100*q.approved/q.limit:0)+'%'}}/><i style={{width:(q.limit?100*q.pending/q.limit:0)+'%'}}/></div></div>)}</div><div className="legend"><span><i className="teal-dot"/>Disetujui</span><span><i className="orange-dot"/>Menunggu</span><span><i className="gray-dot"/>Tersedia</span></div><button className="quota-link" onClick={onCalendar}>Lihat kalender<ArrowRight size={16}/></button></section>
+      </section>:<section className="panel requests-panel"><div className="panel-heading"><div><h2>{recording?'Cuti terbaru':sdm?'Pengajuan terbaru':'Pengajuan Anda'} <span className="count-bubble">{current.length}</span></h2></div><button className="text-button" onClick={onRequests}>Lihat semua<ArrowRight size={15}/></button></div><RequestTable requests={current.slice(0,5)} onSelect={onSelect} compact userId={userId}/></section>}
+      <section className="panel quota-panel"><div className="panel-heading"><div><h2>Kuota per posisi</h2><p>{monthLabel(month)} · dalam orang</p></div><Users size={19} className="muted"/></div><div className="quota-list">{quotas.slice(0,sdm?6:14).map(q=><div className="quota-row" key={q.position}><div><strong>{q.label}</strong><span><b>{q.used}</b> / {q.limit} <small>orang</small></span></div><div className="progress-track"><span style={{width:(q.limit?100*(recording?q.used:q.approved)/q.limit:0)+'%'}}/>{!recording&&<i style={{width:(q.limit?100*q.pending/q.limit:0)+'%'}}/>}</div></div>)}</div><div className="legend"><span><i className="teal-dot"/>{recording?'Tercatat':'Disetujui'}</span>{!recording&&<span><i className="orange-dot"/>Menunggu</span>}<span><i className="gray-dot"/>Tersedia</span></div><button className="quota-link" onClick={onCalendar}>Lihat kalender<ArrowRight size={16}/></button></section>
     </div>
 
     </>)}
@@ -366,7 +379,7 @@ function RequestTable({requests,onSelect,compact=false,onDraft,userId}:{requests
     const isPgs=userId&&r.replacement?.employeeId===userId&&r.employeeId!==userId;
     const submitTime=r.submittedAt||r.createdAt;
     return <tr key={r.id}>
-      <td>
+      <td className="request-person">
         <div className="person">
           <span className="avatar neutral">{initials(r.employeeName)}</span>
           <div>
@@ -375,11 +388,11 @@ function RequestTable({requests,onSelect,compact=false,onDraft,userId}:{requests
           </div>
         </div>
       </td>
-      <td>
+      <td className="request-schedule">
         <span className="date-range">{fmt(r.effectiveStart||r.start)}{r.effectiveEnd!==r.effectiveStart?' – '+fmt(r.effectiveEnd||r.end):''}</span>
         <small>{r.duration} hari kerja</small>
       </td>
-      <td>
+      <td className="request-submitted">
         <div className="submit-time-cell">
           <span className="submit-date">{submitTime ? fmtDateTimeDate(submitTime) : '—'}</span>
           <span className="submit-time-badge">
@@ -392,11 +405,11 @@ function RequestTable({requests,onSelect,compact=false,onDraft,userId}:{requests
         <span className={'category '+r.category.toLowerCase()}>{r.category==='REGULAR'?'Reguler':'Darurat'}</span>
         <small>{r.number}</small>
       </td>}
-      <td>
+      <td className="request-status">
         <Badge status={r.status} cancellation={r.cancellation}/>
         {isPgs&&<span className="badge approved" style={{marginLeft:6}}><span/>Tugas PGS</span>}
       </td>
-      <td>
+      <td className="request-action">
         <button className="icon-button table-arrow" aria-label={'Lihat '+r.employeeName+' '+r.number} onClick={()=>r.status==='DRAFT'&&onDraft?onDraft(r):onSelect(r)}>
           <ArrowUpRight size={17}/>
         </button>
@@ -405,13 +418,14 @@ function RequestTable({requests,onSelect,compact=false,onDraft,userId}:{requests
   })}</tbody></table></div>:<Empty/>;
 }
 function RequestList({requests,month,sdm,onSelect,onDraft,userId}:any){
+  const recording=useContext(RecordingContext);
   const {positionLabel}=useDirectory();
   const [query,setQuery]=useState('');
   const [status,setStatus]=useState('ALL');
   const [sortOrder,setSortOrder]=useState<'newest'|'earliest'>('newest');
   const filtered=requests.filter((r:Leave)=>{
     const matchMonth=!month||(r.effectiveStart||r.start).startsWith(month);
-    const matchStatus=status==='ALL'||(status==='CANCEL_PENDING'?(r.status==='APPROVED'&&r.cancellation?.status==='PENDING'):r.status===status);
+    const matchStatus=status==='ALL'||(recording&&status==='RECORDED'?ACTIVE.includes(r.status):status==='CANCEL_PENDING'?(r.status==='APPROVED'&&r.cancellation?.status==='PENDING'):r.status===status);
     const matchQuery=`${r.employeeName} ${r.number} ${(r.positionName??positionLabel(r.position))}`.toLowerCase().includes(query.toLowerCase());
     return matchMonth&&matchStatus&&matchQuery;
   }).sort((a:Leave,b:Leave)=>{
@@ -419,9 +433,32 @@ function RequestList({requests,month,sdm,onSelect,onDraft,userId}:any){
     const timeB=b.submittedAt||b.createdAt||'';
     return sortOrder==='earliest'?timeA.localeCompare(timeB):timeB.localeCompare(timeA);
   });
-  return <section className="panel"><div className="list-toolbar"><div className="tabs">{[['ALL','Semua'],...(sdm?[['CANCEL_PENDING','Perlu Batal']]:[]),['APPROVED','Disetujui'],['REJECTED','Ditolak'],...(!sdm?[['DRAFT','Draft'],['WITHDRAWN','Dibatalkan']]:[['WITHDRAWN','Dibatalkan']])].map(([id,label])=><button key={id} className={status===id?'selected':''} onClick={()=>setStatus(id)}>{label}</button>)}</div><div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginLeft:'auto'}}><select aria-label="Urutan waktu pengajuan" className="sort-select" value={sortOrder} onChange={e=>setSortOrder(e.target.value as any)}><option value="newest">Waktu: Terbaru</option><option value="earliest">Waktu: Terdahulu (Antrean siapa cepat)</option></select><label className="search"><Search size={17}/><input aria-label="Cari pengajuan" placeholder="Cari nama atau nomor…" value={query} onChange={e=>setQuery(e.target.value)}/></label></div></div><RequestTable requests={filtered} onSelect={onSelect} onDraft={onDraft} userId={userId}/><div className="table-footer">Menampilkan {filtered.length} pengajuan · {month?monthLabel(month):'Semua bulan'}</div></section>;
+  return <section className="panel"><div className="list-toolbar"><div className="tabs">{(recording?[['ALL','Semua'],['RECORDED','Tercatat'],['WITHDRAWN','Dibatalkan']]:[['ALL','Semua'],...(sdm?[['CANCEL_PENDING','Perlu Batal']]:[]),['APPROVED','Disetujui'],['REJECTED','Ditolak'],...(!sdm?[['DRAFT','Draft'],['WITHDRAWN','Dibatalkan']]:[['WITHDRAWN','Dibatalkan']])]).map(([id,label])=><button key={id} className={status===id?'selected':''} onClick={()=>setStatus(id)}>{label}</button>)}</div><div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginLeft:'auto'}}><select aria-label="Urutan waktu pengajuan" className="sort-select" value={sortOrder} onChange={e=>setSortOrder(e.target.value as any)}><option value="newest">Waktu: Terbaru</option><option value="earliest">Waktu: Terlama</option></select><label className="search"><Search size={17}/><input aria-label="Cari pengajuan" placeholder="Cari nama atau nomor…" value={query} onChange={e=>setQuery(e.target.value)}/></label></div></div><RequestTable requests={filtered} onSelect={onSelect} onDraft={onDraft} userId={userId}/><div className="table-footer">Menampilkan {filtered.length} pengajuan · {month?monthLabel(month):'Semua bulan'}</div></section>;
 }
-function CalendarView({data,month,setMonth,onSelect}:any){const {positions:POSITIONS,positionLabel}=useDirectory();const [position,setPosition]=useState('ALL');const days=monthDays(month);const offset=(new Date(month+'-01T00:00:00').getDay()+6)%7;const entries=data.calendar.filter((r:any)=>position==='ALL'||r.position===position);return <><section className="panel calendar-panel"><div className="panel-heading"><div className="calendar-heading"><button className="icon-button" aria-label="Bulan sebelumnya" onClick={()=>setMonth(addMonths(month+'-01',-1).slice(0,7))}><ChevronLeft size={18}/></button><h2>{monthLabel(month)}</h2><button className="icon-button" aria-label="Bulan berikutnya" onClick={()=>setMonth(addMonths(month+'-01',1).slice(0,7))}><ChevronRight size={18}/></button></div><select aria-label="Filter posisi kalender" value={position} onChange={e=>setPosition(e.target.value)}><option value="ALL">Semua posisi</option>{data.quotas.map((q:Quota)=><option key={q.position} value={q.position}>{q.label}</option>)}</select></div><div className="calendar-scroll"><div className="calendar-grid">{['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d=><div className="weekday" key={d}>{d}</div>)}{Array.from({length:offset},(_,i)=><div className="day outside" key={'o'+i}/>)}{days.map(d=>{const blocked=data.blocked.includes(d);const off=!isWorking(d,data.calendarConfig);return <div key={d} className={'day '+(blocked?'blocked ':'')+(off?'off ':'')+(d===data.today?'current':'')}><div className="day-number">{Number(d.slice(-2))}{blocked&&<small>H-3</small>}</div>{data.calendarConfig.exceptions[d]&&<small className="holiday-label">{data.calendarConfig.exceptions[d].label}</small>}{entries.filter((r:any)=>r.days.includes(d)).map((r:any,i:number)=><button disabled={!r.id} key={r.id+'-'+i} onClick={()=>onSelect(r.id)} className={'calendar-event '+(r.status==='APPROVED'?'approved':'pending')}><span>{r.name}</span><small>{(r.positionName??positionLabel(r.position))} · {r.status==='APPROVED'?'Disetujui':'Menunggu'}</small></button>)}</div>;})}</div></div><div className="legend calendar-legend"><span><i className="teal-dot"/>Disetujui</span><span><i className="orange-dot"/>Menunggu review</span><span><i className="blocked-dot"/>3 hari kerja terakhir</span><span>Kalender kerja unit: Senin–Jumat + pengecualian admin</span></div></section><section className="panel all-quotas"><div className="panel-heading"><h2>Kapasitas posisi bulan ini</h2><span className="muted">Terpakai / kuota orang</span></div><div className="quota-cards">{data.quotas.map((q:Quota)=><div key={q.position}><strong>{q.label}</strong><span>{q.used}<small> / {q.limit}</small></span><p>{q.available} orang tersedia</p></div>)}</div></section></>;}
+function CalendarView({data,month,setMonth,onSelect}:any){
+  const recording=useContext(RecordingContext);
+  const {positionLabel}=useDirectory();
+  const [position,setPosition]=useState('ALL');
+  const days=monthDays(month);
+  const offset=(new Date(month+'-01T00:00:00').getDay()+6)%7;
+  const entries=data.calendar.filter((r:any)=>position==='ALL'||r.position===position);
+  return <><section className="panel calendar-panel">
+    <div className="panel-heading"><div className="calendar-heading"><button className="icon-button" aria-label="Bulan sebelumnya" onClick={()=>setMonth(addMonths(month+'-01',-1).slice(0,7))}><ChevronLeft size={18}/></button><h2>{monthLabel(month)}</h2><button className="icon-button" aria-label="Bulan berikutnya" onClick={()=>setMonth(addMonths(month+'-01',1).slice(0,7))}><ChevronRight size={18}/></button></div><select aria-label="Filter posisi kalender" value={position} onChange={e=>setPosition(e.target.value)}><option value="ALL">Semua posisi</option>{data.quotas.map((q:Quota)=><option key={q.position} value={q.position}>{q.label}</option>)}</select></div>
+    <div className="calendar-scroll"><div className="calendar-grid">
+      {['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d=><div className="weekday" key={d}>{d}</div>)}
+      {Array.from({length:offset},(_,i)=><div className="day outside" key={'o'+i}/>)}
+      {days.map(d=>{
+        const blocked=data.blocked.includes(d);const off=!isWorking(d,data.calendarConfig);
+        return <div key={d} className={'day '+(blocked?'blocked ':'')+(off?'off ':'')+(d===data.today?'current':'')}>
+          <div className="day-number">{Number(d.slice(-2))}{blocked&&<small>H-3</small>}</div>
+          {data.calendarConfig.exceptions[d]&&<small className="holiday-label">{data.calendarConfig.exceptions[d].label}</small>}
+          {entries.filter((r:any)=>r.days.includes(d)).map((r:any,i:number)=><button disabled={!r.id} key={r.id+'-'+i} onClick={()=>onSelect(r.id)} className={'calendar-event '+(recording||r.status==='RECORDED'||r.status==='APPROVED'?'approved':'pending')}><span>{r.name}</span><small>{(r.positionName??positionLabel(r.position))} · {recording||r.status==='RECORDED'?'Tercatat':r.status==='APPROVED'?'Disetujui':'Menunggu'}</small></button>)}
+        </div>;
+      })}
+    </div></div>
+    <div className="legend calendar-legend"><span><i className="teal-dot"/>{recording?'Tercatat':'Disetujui'}</span>{!recording&&<span><i className="orange-dot"/>Menunggu review</span>}<span><i className="blocked-dot"/>3 hari kerja terakhir</span><span>Kalender kerja unit: Senin–Jumat + pengecualian admin</span></div>
+  </section><section className="panel all-quotas"><div className="panel-heading"><h2>Kapasitas posisi bulan ini</h2><span className="muted">Terpakai / kuota orang</span></div><div className="quota-cards">{data.quotas.map((q:Quota)=><div key={q.position}><strong>{q.label}</strong><span>{q.used}<small> / {q.limit}</small></span><p>{q.available} orang tersedia</p></div>)}</div></section></>;
+}
 
 export function parseAnyDateInput(raw: string): { formatted: string; iso: string | null } {
   const text = raw.trim();
@@ -658,7 +695,7 @@ function DatePicker({
         <input
           type="text"
           inputMode="numeric"
-          pattern="[0-9]*"
+          pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}"
           maxLength={10}
           aria-label={label}
           value={inputValue}
@@ -714,7 +751,7 @@ function DatePicker({
                 <input
                   type="text"
                   inputMode="numeric"
-                  pattern="[0-9]*"
+                  pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}"
                   maxLength={10}
                   placeholder="dd/mm/yyyy"
                   aria-label={'Ketik manual ' + label}
@@ -899,9 +936,21 @@ function LeaveForm({user,today,draft,calendar,onDone,onDelete}:{user:Employee;to
     {deleting&&<Modal title="Hapus draft?" onClose={()=>setDeleting(false)}><p className="reason-text">Draft ini akan dihapus. Kuota tidak berubah karena draft belum memakai slot.</p><div className="modal-actions"><button className="button secondary" onClick={()=>setDeleting(false)}>Kembali</button><button className="button danger-button" disabled={busy} onClick={async()=>{setBusy(true);try{await api('/drafts/'+draft!.id,{method:'DELETE',key:crypto.randomUUID()});onDelete();}catch(e){setError((e as Error).message);setDeleting(false);}finally{setBusy(false);}}}>Hapus draft</button></div></Modal>}
   </div>;
 }
+function RecordedLeaveDetail({leave:r,unitName,onClose}:{leave:Leave;unitName:string;onClose:()=>void}){
+  const {positionLabel}=useDirectory();
+  const [showCertificate,setShowCertificate]=useState(false);
+  return <Modal title={'Detail '+r.number} onClose={onClose}>
+    <div className="detail-title"><div><h3>{r.employeeName}</h3><p>{r.positionName??positionLabel(r.position)} · {r.outletName}</p></div><Badge status={r.status}/></div>
+    <div className="detail-dates"><div><small>Tanggal cuti</small><strong>{fmt(r.effectiveStart,true)} – {fmt(r.effectiveEnd,true)}</strong></div><b>{r.duration}<small>hari kerja</small></b></div>
+    <dl><dt>Kategori</dt><dd>{r.category==='REGULAR'?'Reguler':'Darurat'}</dd><dt>Jenis cuti</dt><dd>{r.subtype}</dd><dt>Email</dt><dd>{r.email}</dd><dt>Nomor HP</dt><dd>{r.phone}</dd><dt>Waktu pencatatan</dt><dd>{fmtDateTimeDate(r.submittedAt||r.createdAt)} · {fmtDateTimeTime(r.submittedAt||r.createdAt)}</dd>{r.replacementCheckedAt&&<><dt>PGS</dt><dd>Ketersediaan sudah diperiksa</dd></>}{r.replacement&&<><dt>Pengganti</dt><dd>{r.replacement.employeeName} · {r.replacement.outletName}</dd></>}</dl>
+    <h3>Alasan cuti</h3><p className="reason-text">{r.reason}</p>
+    <div className="modal-actions">{ACTIVE.includes(r.status)&&<button className="button secondary" onClick={()=>setShowCertificate(true)}><Printer size={16}/>Bukti pencatatan</button>}<button className="button primary" onClick={onClose}>Tutup</button></div>
+    {showCertificate&&<LeaveCertificateModal leave={r} unitName={unitName} positionName={r.positionName||positionLabel(r.position)} recordOnly onClose={()=>setShowCertificate(false)}/>}
+  </Modal>;
+}
 function Detail({leave:r,user,today,unitName,onClose,onUpdate,onCopy}:{leave:Leave;user:Employee;today:string;unitName?:string;onClose:()=>void;onUpdate:(r:Leave,msg?:string)=>void;onCopy:()=>void}){
   const [showCertificate,setShowCertificate]=useState(false);const {positionLabel}=useDirectory();const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [reason,setReason]=useState('');const [channel,setChannel]=useState(r.confirmationChannel||'WhatsApp');const [isEditingConfirm,setIsEditingConfirm]=useState(false);const [customChannel,setCustomChannel]=useState(Boolean(r.confirmationChannel&&!['WhatsApp','Telepon','Tatap Muka','Email'].includes(r.confirmationChannel)));const [confirmAction,setConfirmAction]=useState('');
-  const canReview=user.roles.includes('SDM')&&r.employeeId!==user.id&&r.status==='PENDING_SDM';
+  const canReview=user.roles.some(role=>role==='SDM'||role==='ADMIN')&&r.employeeId!==user.id&&r.status==='PENDING_SDM';
   const [replacement,setReplacement]=useState<ReplacementCheck|null>(null);const [replacementError,setReplacementError]=useState('');const [replacementId,setReplacementId]=useState('');const [replacementRefresh,setReplacementRefresh]=useState(0);
   useEffect(()=>{
     if(!canReview)return;let alive=true;
@@ -910,7 +959,7 @@ function Detail({leave:r,user,today,unitName,onClose,onUpdate,onCopy}:{leave:Lea
     return()=>{alive=false;clearInterval(timer);};
   },[canReview,r.id,r.version,replacementRefresh]);
   const pgsBlocked=canReview&&(!replacement||!!replacementError||!!replacement.rule?.enabled&&!replacement.candidates.some(c=>c.available)||!!replacementId&&!replacement?.candidates.some(c=>c.id===replacementId&&c.available));
-  const canReviewCancellation=user.roles.includes('SDM')&&r.employeeId!==user.id&&r.status==='APPROVED'&&r.cancellation?.status==='PENDING';
+  const canReviewCancellation=user.roles.some(role=>role==='SDM'||role==='ADMIN')&&r.employeeId!==user.id&&r.status==='APPROVED'&&r.cancellation?.status==='PENDING';
   const canRequestCancellation=r.employeeId===user.id&&r.status==='APPROVED'&&r.effectiveEnd>=today&&(!r.cancellation||r.cancellation.status==='REJECTED');
   const hasPendingCancellation=r.status==='APPROVED'&&r.cancellation?.status==='PENDING';
   const cleanPhone=(r.phone||'').replace(/\D/g,'');const waNumber=cleanPhone.startsWith('0')?'62'+cleanPhone.slice(1):cleanPhone.startsWith('62')?cleanPhone:('62'+cleanPhone);
@@ -1132,6 +1181,7 @@ function Detail({leave:r,user,today,unitName,onClose,onUpdate,onCopy}:{leave:Lea
     </Modal>;
   }
   return <Modal title={'Detail '+r.number} onClose={onClose}><div className="detail-title"><div className="person"><span className="avatar teal">{initials(r.employeeName)}</span><div><h3>{r.employeeName}</h3><p>{(r.positionName??positionLabel(r.position))} · {r.category==='REGULAR'?'Reguler':'Darurat'}</p></div></div><Badge status={r.status} cancellation={r.cancellation}/></div><div className="detail-dates"><div><small>Tanggal efektif</small><strong>{fmt(r.effectiveStart,true)} – {fmt(r.effectiveEnd,true)}</strong></div><b>{r.duration}<small>hari kerja</small></b></div><dl><dt>Tanggal diminta</dt><dd>{fmt(r.start,true)} – {fmt(r.end,true)}</dd><dt>Waktu diajukan</dt><dd style={{fontWeight:600,color:'#183942'}}>{fmtDateTimeDate(r.submittedAt || r.createdAt)} · {fmtDateTimeTime(r.submittedAt || r.createdAt) || 'Draft'}</dd><dt>Jenis cuti</dt><dd>{r.subtype}</dd><dt>Email</dt><dd>{r.email}</dd><dt>Nomor HP</dt><dd>{r.phone}</dd><dt>Versi kalender</dt><dd>{r.calendarVersion} · Kuota {r.limit} orang</dd></dl>
+    {canReview&&'submittedVia' in r&&r.submittedVia==='PUBLIC_FORM'&&<div className="alert info">Data pemohon diisi tanpa login. Periksa identitas dan outlet {r.outletName} sebelum menyetujui pengajuan.</div>}
     {hasPendingCancellation&&<div className="alert warning" style={{display:'flex',flexDirection:'column',gap:5}}>
       <div style={{display:'flex',alignItems:'center',gap:7}}><AlertCircle size={18}/><strong>Permohonan Pembatalan Cuti Menunggu Persetujuan SDM</strong></div>
       <p style={{margin:0,fontSize:12,color:'#825619'}}>Alasan pembatalan karyawan: <em>"{r.cancellation?.reason}"</em><br/><small>Diajukan pada {new Date(r.cancellation!.requestedAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})} WIB</small></p>
@@ -1146,7 +1196,7 @@ function Detail({leave:r,user,today,unitName,onClose,onUpdate,onCopy}:{leave:Lea
     </div>}
     {r.outletName&&<p className="reason-text">Outlet: {r.outletName}</p>}
     {r.replacement&&<div className="alert info"><span><strong>PGS {(r.positionName??positionLabel(r.position))}: {r.replacement.employeeName}</strong><br/>Jabatan: {(r.replacement.positionName||positionLabel(r.replacement.position))} · {r.replacement.outletName}{r.status==='WITHDRAWN'?' · Tugas PGS telah dilepas':''}</span></div>}
-    {user.roles.includes('SDM')&&r.status==='APPROVED'&&r.replacement&&<div className="pgs-notify-card">
+    {user.roles.some(role=>role==='SDM'||role==='ADMIN')&&r.status==='APPROVED'&&r.replacement&&<div className="pgs-notify-card">
       <div className="pgs-notify-header">
         <div className="pgs-notify-title-group">
           <div className="pgs-notify-icon"><MessageSquare size={18}/></div>
@@ -1282,18 +1332,18 @@ function Detail({leave:r,user,today,unitName,onClose,onUpdate,onCopy}:{leave:Lea
     {showCertificate&&<LeaveCertificateModal leave={r} unitName={unitName||'Kantor Cabang'} positionName={r.positionName||positionLabel(r.position)} onClose={()=>setShowCertificate(false)}/>}
   </Modal>;
 }
-function Admin({tab,onTabChange,onChange,onToast,today,userId}:{tab:AdminTab;onTabChange:(tab:AdminTab)=>void;onChange:()=>void;onToast:(s:string)=>void;today:string;userId:string}){const [data,setData]=useState<any>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [editing,setEditing]=useState<any>(null);const [deleting,setDeleting]=useState<Employee|null>(null);const [deleteError,setDeleteError]=useState('');const [date,setDate]=useState('');const [label,setLabel]=useState('');const [working,setWorking]=useState(false);const [qm,setQm]=useState(addMonths(today.slice(0,7)+'-01',1).slice(0,7));const [pos,setPos]=useState('CS_BINA');const [limit,setLimit]=useState<number|string>(2);const [calYear,setCalYear]=useState('ALL');
+function Admin({tab,onTabChange,onChange,onToast,today,userId,publicForm=false}:{tab:AdminTab;onTabChange:(tab:AdminTab)=>void;onChange:()=>void;onToast:(s:string)=>void;today:string;userId:string;publicForm?:boolean}){const [data,setData]=useState<any>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [editing,setEditing]=useState<any>(null);const [deleting,setDeleting]=useState<Employee|null>(null);const [deleteError,setDeleteError]=useState('');const [date,setDate]=useState('');const [label,setLabel]=useState('');const [working,setWorking]=useState(false);const [qm,setQm]=useState(addMonths(today.slice(0,7)+'-01',1).slice(0,7));const [pos,setPos]=useState('CS_BINA');const [limit,setLimit]=useState<number|string>(2);const [calYear,setCalYear]=useState('ALL');
   const load=()=>api<any>('/admin').then(next=>{setData(next);if(!next.positions.some((p:any)=>p[0]===pos)){setPos(next.positions[0]?.[0]??'');setLimit(next.positions[0]?.[2]??0);}}).catch(e=>setError(e.message));useEffect(()=>{load();},[]);
   async function save(path:string,body:any){setBusy(true);setError('');try{await action('/admin/'+path,body);await load();onChange();onToast('Perubahan berhasil disimpan.');setEditing(null);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   async function deleteEmployee(){if(!deleting)return;setBusy(true);setDeleteError('');try{await api('/admin/employee/'+encodeURIComponent(deleting.id),{method:'DELETE',key:crypto.randomUUID()});await load();onChange();setDeleting(null);onToast('Karyawan berhasil dihapus.');}catch(e){setDeleteError((e as Error).message);}finally{setBusy(false);}}
   if(!data)return <div className="panel empty">{error||'Memuat administrasi…'}</div>;
   const POSITIONS:readonly (readonly [string,string,number])[]=data.positions;const positionLabel=(code:string)=>POSITIONS.find(p=>p[0]===code)?.[1]??code;
   return <section className="panel"><div className="list-toolbar"><div className="tabs">{ADMIN_TABS.map(([id,name])=><button key={id} className={tab===id?'selected':''} onClick={()=>{onTabChange(id);setError('');}}>{name}</button>)}</div></div>{error&&<div className="alert danger margin" role="alert">{error}</div>}
-    {tab==='employees'&&<><div className="panel-heading"><div><h2>Direktori karyawan</h2><p>Akses dan penempatan karyawan pada unit ini.</p></div><button className="button primary" onClick={()=>setEditing({name:'',email:'',phone:'',position:POSITIONS[0]?.[0]??'',outletId:data.outlets[0]?.id??'',roles:['EMPLOYEE'],active:true,password:''})}><Plus size={17}/>Tambah karyawan</button></div><div className="table-scroll"><table><thead><tr><th>Nama</th><th>Posisi</th><th>Outlet</th><th>Akses</th><th>Status</th><th>Aksi</th></tr></thead><tbody>{data.employees.map((e:Employee)=><tr key={e.id}><td><strong>{e.name}</strong><small>{e.email}</small></td><td>{positionLabel(e.position)}</td><td>{data.outlets.find((o:any)=>o.id===e.outletId)?.name??'—'}</td><td>{e.roles.join(', ')}</td><td>{e.active?'Aktif':'Nonaktif'}</td><td><div className="employee-actions"><button className="text-button" disabled={busy} onClick={()=>setEditing({...e,position:e.roles.includes('SDM')?'SDM':e.position,password:''})}>Edit</button>{e.id!==userId&&<button className="text-button delete-link" disabled={busy} aria-label={'Hapus '+e.name} onClick={()=>{setDeleteError('');setDeleting(e);}}>Hapus</button>}</div></td></tr>)}</tbody></table></div></>}
+    {tab==='employees'&&<><div className="panel-heading"><div><h2>Direktori karyawan</h2><p>{publicForm?'Data pemohon dan penempatan karyawan. Periksa data formulir lalu simpan agar dapat menjadi calon PGS.':'Akses dan penempatan karyawan pada unit ini.'}</p></div><button className="button primary" onClick={()=>setEditing({name:'',email:'',phone:'',position:POSITIONS[0]?.[0]??'',outletId:data.outlets[0]?.id??'',roles:['EMPLOYEE'],active:true,password:''})}><Plus size={17}/>Tambah karyawan</button></div><div className="table-scroll"><table><thead><tr><th>Nama</th><th>Posisi</th><th>Outlet</th><th>Akses</th><th>Status</th><th>Aksi</th></tr></thead><tbody>{data.employees.map((e:Employee)=><tr key={e.id}><td><strong>{e.name}</strong><small>{e.email}</small>{publicForm&&e.publicApplicant&&<small>Data formulir, belum diverifikasi</small>}</td><td>{positionLabel(e.position)}</td><td>{data.outlets.find((o:any)=>o.id===e.outletId)?.name??'—'}</td><td>{publicForm?(e.roles.includes('ADMIN')?'Admin':'Tanpa login'):e.roles.join(', ')}</td><td>{e.active?'Aktif':'Nonaktif'}</td><td><div className="employee-actions"><button className="text-button" disabled={busy} onClick={()=>setEditing({...e,position:e.roles.includes('SDM')?'SDM':e.position,password:''})}>Edit</button>{e.id!==userId&&<button className="text-button delete-link" disabled={busy} aria-label={'Hapus '+e.name} onClick={()=>{setDeleteError('');setDeleting(e);}}>Hapus</button>}</div></td></tr>)}</tbody></table></div></>}
     {['positions','outlets','replacements'].includes(tab)&&<ReplacementAdmin key={tab} tab={tab} data={data} onChange={async()=>{await load();onChange();}} onToast={onToast}/>}
     {tab==='quota'&&<div className="admin-content"><h2>Kuota orang per posisi</h2><p className="muted">Berlaku per bulan dan sekaligus menjadi batas orang cuti bersamaan. Periode yang sudah memiliki alokasi dibekukan.</p><form onSubmit={e=>{e.preventDefault();void save('quota',{month:qm,position:pos,limit:Number(limit)});}}><div className="field-grid three"><Field label="Bulan berlaku"><input type="month" required value={qm} onChange={e=>setQm(e.target.value)}/></Field><Field label="Posisi"><select value={pos} onChange={e=>{setPos(e.target.value);setLimit(POSITIONS.find(p=>p[0]===e.target.value)![2]);}}>{POSITIONS.map(([p,l])=><option key={p} value={p}>{l}</option>)}</select></Field><Field label="Kuota orang"><input type="number" inputMode="numeric" required min={0} max={1000} step={1} value={limit} onChange={e=>setLimit(e.target.value)}/></Field></div><button className="button primary" disabled={busy}>Simpan kuota periode</button></form><div className="quota-cards admin-quotas">{POSITIONS.map(([p,l,q])=><div key={p}><strong>{l}</strong><span>{data.policy.quotas[Object.keys(data.policy.quotas).filter(m=>m<=qm).sort().at(-1)??'']?.[p]??q}<small> orang</small></span></div>)}</div></div>}
     {tab==='calendar'&&<div className="admin-content"><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}><div><h2>Kalender kerja unit</h2><p className="muted">Pola kerja Senin–Jumat. Tambahkan libur atau hari kerja khusus. Perubahan H-3 yang menyentuh cuti aktif akan ditolak.</p></div><button type="button" className="button secondary" disabled={busy} onClick={()=>save('calendar/sync-2027',{})} title="Muat ulang seluruh hari libur nasional dan cuti bersama 2027">Sinkronkan Libur 2027</button></div><div className="field-grid three"><Field label="Tanggal pengecualian"><input type="date" min={today} value={date} onChange={e=>setDate(e.target.value)}/></Field><Field label="Keterangan"><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="Contoh: libur unit"/></Field><Field label="Jenis hari"><select value={String(working)} onChange={e=>setWorking(e.target.value==='true')}><option value="false">Hari libur</option><option value="true">Hari kerja khusus</option></select></Field></div><button className="button primary" disabled={busy||!date||label.length<2} onClick={()=>save('calendar',{date,label,working})}>Simpan kalender</button><div style={{marginTop:24,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}><strong>Daftar Pengecualian & Libur ({Object.keys(data.policy.calendar.exceptions).length})</strong><div style={{display:'flex',gap:6}}>{['ALL','2026','2027'].map(y=><button key={y} type="button" className={'button '+(calYear===y?'primary':'secondary')} style={{minHeight:30,padding:'4px 10px',fontSize:11}} onClick={()=>setCalYear(y)}>{y==='ALL'?'Semua':y}</button>)}</div></div><div className="exception-list">{Object.entries(data.policy.calendar.exceptions).sort(([a],[b])=>a.localeCompare(b)).filter(([d])=>calYear==='ALL'||d.startsWith(calYear)).map(([d,v]:any)=><div key={d}><span><strong>{fmt(d,true)}</strong> · {v.label} · {v.working?'Kerja':'Libur'}</span><button className="text-button" disabled={busy} onClick={()=>save('calendar',{date:d,label:v.label,working:v.working,remove:true})}>Hapus pengecualian</button></div>)}</div></div>}
-    {tab==='jobs'&&<div className="admin-content"><h2>Pengiriman notifikasi</h2><div className="alert info"><Mail size={18}/><span>CAPTURED berarti email ditampung lokal untuk simulasi, bukan terkirim ke inbox. Penerima SDM mengikuti akun SDM aktif pada unit ini.</span></div>{data.jobs.length?<div className="table-scroll"><table><thead><tr><th>Jenis</th><th>Jadwal</th><th>Status</th><th>Upaya gagal</th><th/></tr></thead><tbody>{data.jobs.map((j:any)=><tr key={j.id}><td>{j.kind}</td><td>{new Date(j.due_at).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})}</td><td>{j.state}<small>{j.last_error}</small></td><td>{j.attempts}</td><td>{j.state==='FAILED'&&<button className="text-button" disabled={busy} onClick={()=>save('jobs/'+j.id+'/retry',{})}>Coba ulang</button>}</td></tr>)}</tbody></table></div>:<Empty title="Belum ada email dalam antrean" text="Pengajuan baru dan keputusan SDM akan membuat notifikasi."/>}</div>}
+    {tab==='jobs'&&<div className="admin-content"><h2>Pengiriman notifikasi</h2><div className="alert info"><Mail size={18}/><span>CAPTURED berarti email ditampung lokal untuk simulasi, bukan terkirim ke inbox. {publicForm?'Bukti pencatatan dikirim ke pemohon; pemberitahuan cuti dikirim ke admin aktif.':'Penerima SDM mengikuti akun SDM aktif pada unit ini.'}</span></div>{data.jobs.length?<div className="table-scroll"><table><thead><tr><th>Jenis</th><th>Jadwal</th><th>Status</th><th>Upaya gagal</th><th/></tr></thead><tbody>{data.jobs.map((j:any)=><tr key={j.id}><td>{j.kind}</td><td>{new Date(j.due_at).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})}</td><td>{j.state}<small>{j.last_error}</small></td><td>{j.attempts}</td><td>{j.state==='FAILED'&&<button className="text-button" disabled={busy} onClick={()=>save('jobs/'+j.id+'/retry',{})}>Coba ulang</button>}</td></tr>)}</tbody></table></div>:<Empty title="Belum ada email dalam antrean" text={publicForm?'Pencatatan cuti baru akan membuat notifikasi.':'Pengajuan baru dan keputusan SDM akan membuat notifikasi.'}/>}</div>}
     {tab==='audit'&&<div className="admin-content"><h2>Jejak aktivitas</h2>{data.audit.length?<div className="table-scroll"><table><thead><tr><th>Waktu</th><th>Pengguna</th><th>Aksi</th><th>Objek</th></tr></thead><tbody>{data.audit.map((a:any)=><tr key={a.id}><td>{new Date(a.at).toLocaleString('id-ID')}</td><td>{data.employees.find((e:Employee)=>e.id===a.actor_id)?.name??a.actor_id}</td><td>{a.action}</td><td className="mono">{a.object_id}</td></tr>)}</tbody></table></div>:<Empty title="Belum ada aktivitas tercatat"/>}</div>}
     {editing&&(()=>{
       const isSdm=editing.roles.includes('SDM');
@@ -1323,11 +1373,11 @@ function Admin({tab,onTabChange,onChange,onToast,today,userId}:{tab:AdminTab;onT
                 {data.outlets.map((o:any)=><option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
             </Field>
-            <Field label={editing.id?'Kata sandi baru (kosongkan jika tetap)':'Kata sandi awal'} hint={PASSWORD_HINT}>
+            {(!publicForm||editing.roles.includes('ADMIN'))&&<Field label={editing.id?'Kata sandi baru (kosongkan jika tetap)':'Kata sandi awal'} hint={PASSWORD_HINT}>
               <input type="password" minLength={6} maxLength={200} pattern={PASSWORD_PATTERN.source} title={PASSWORD_HINT} required={!editing.id} autoComplete="new-password" value={editing.password} onChange={e=>setEditing({...editing,password:e.target.value})}/>
-            </Field>
+            </Field>}
             <div className="inline-actions">
-              {['EMPLOYEE','SDM','ADMIN'].map(role=>
+              {(publicForm?['EMPLOYEE','ADMIN']:['EMPLOYEE','SDM','ADMIN']).map(role=>
                 <label className="checkbox" key={role}>
                   <input
                     type="checkbox"
@@ -1348,7 +1398,7 @@ function Admin({tab,onTabChange,onChange,onToast,today,userId}:{tab:AdminTab;onT
                       });
                     }}
                   />
-                  {role}
+                  {publicForm?(role==='ADMIN'?'Akses admin':'Data karyawan'):role}
                 </label>
               )}
             </div>

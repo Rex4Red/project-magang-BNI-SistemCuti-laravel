@@ -5,9 +5,9 @@ export const POSITIONS = [
   ['ARM','ARM',2],['PRM','PRM',2],['BTN','BTN',2],['BMB','BMB',2],['BSM','BSM',2],['CBRS','CBRS',2],['CBRS_SPV','CBRS SPV',2],['CLEANING_STAFF','Cleaning Staff',2],
 ] as const;
 export type Role = 'EMPLOYEE'|'SDM'|'ADMIN';
-export type Status = 'DRAFT'|'PENDING_SDM'|'APPROVED'|'REJECTED'|'WITHDRAWN';
+export type Status = 'DRAFT'|'PENDING_SDM'|'APPROVED'|'RECORDED'|'REJECTED'|'WITHDRAWN';
 export type PositionDefinition = readonly [string,string,number];
-export interface Employee { id:string; name:string; email:string; phone:string; position:string; unit:string; roles:Role[]; active:boolean; deletedAt?:string; outletId?:string; positionName?:string; }
+export interface Employee { id:string; name:string; email:string; phone:string; position:string; unit:string; roles:Role[]; active:boolean; deletedAt?:string; outletId?:string; positionName?:string; publicApplicant?:boolean; }
 export interface Outlet { id:string; unit:string; name:string; deletedAt?:string; }
 export interface ReplacementRule { position:string; enabled:boolean; sourcePositions:string[]; sameOutlet:boolean; otherOutlets:'NONE'|'ALL'|'SELECTED'; outletIds:string[]; }
 export interface ReplacementAssignment { employeeId:string; employeeName:string; position:string; positionName?:string; outletId:string; outletName:string; assignedAt:string; assignedBy:string; phone?:string; email?:string; notifiedAt?:string; notifiedChannel?:string; notifiedBy?:string; }
@@ -21,7 +21,7 @@ export interface LeaveCancellation { reason:string; requestedAt:string; status:'
 export interface Leave extends LeaveInput { id:string; number:string; employeeId:string; employeeName:string; position:string; unit:string; status:Status; days:string[]; effectiveStart:string; effectiveEnd:string; duration:number; submittedAt:string; createdAt:string; confirmation:'NOT_CONFIRMED'|'CONFIRMED'|'DECLINED'; confirmationChannel?:string; decisionReason?:string; version:number; calendarVersion:number; limit:number; events:{at:string; text:string; actor:string}[]; cancellation?:LeaveCancellation; outletId?:string; outletName?:string; positionName?:string; replacement?:ReplacementAssignment; replacementCheckedAt?:string; }
 export interface Quota { position:string; label:string; limit:number; used:number; approved:number; pending:number; available:number; alreadyCounted:boolean; }
 export interface Preview { days:string[]; effectiveStart:string; effectiveEnd:string; duration:number; minimum:string; blocked:string[]; adjusted:boolean; errors:{code:string; message:string}[]; quota:Quota; fingerprint?:string; scheduledAt?:string; }
-export const ACTIVE:Status[] = ['PENDING_SDM','APPROVED'];
+export const ACTIVE:Status[] = ['PENDING_SDM','APPROVED','RECORDED'];
 export const HOLIDAYS_2027: Record<string, { working: boolean; label: string }> = {
   // Hari Libur Nasional 2027
   '2027-01-01': { working: false, label: 'Tahun Baru 2027 Masehi' },
@@ -54,7 +54,7 @@ export const HOLIDAYS_2027: Record<string, { working: boolean; label: string }> 
   '2027-12-24': { working: false, label: 'Cuti Bersama Kelahiran Yesus Kristus (Natal)' },
 };
 export const DEFAULT_CALENDAR:Calendar = {version:1, weekdays:[1,2,3,4,5], exceptions:{...HOLIDAYS_2027}};
-export const statusLabel:Record<Status,string> = {DRAFT:'Draft',PENDING_SDM:'Menunggu review',APPROVED:'Disetujui',REJECTED:'Ditolak',WITHDRAWN:'Ditarik'};
+export const statusLabel:Record<Status,string> = {DRAFT:'Draft',PENDING_SDM:'Menunggu review',APPROVED:'Disetujui',RECORDED:'Tercatat',REJECTED:'Ditolak',WITHDRAWN:'Ditarik'};
 export const positionLabel = (code:string) => POSITIONS.find(p=>p[0]===code)?.[1] ?? code;
 export const dateOnly = (now:Date = new Date()) => new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
 export const date = (s:string) => new Date(s+'T00:00:00Z');
@@ -81,7 +81,7 @@ export function calculateMaxEndDate(start:string,c?:Calendar,maxWorkingDays=5):s
 }
 export function quotaFor(position:string,month:string,requests:Leave[],limit:number,employeeId=''):Quota {
   const relevant=requests.filter(r=>r.position===position && r.effectiveStart.slice(0,7)===month && ACTIVE.includes(r.status));
-  const approved=new Set(relevant.filter(r=>r.status==='APPROVED').map(r=>r.employeeId));
+  const approved=new Set(relevant.filter(r=>r.status==='APPROVED'||r.status==='RECORDED').map(r=>r.employeeId));
   const all=new Set(relevant.map(r=>r.employeeId));
   return {position,label:positionLabel(position),limit,used:all.size,approved:approved.size,pending:all.size-approved.size,available:Math.max(0,limit-all.size),alreadyCounted:all.has(employeeId)};
 }

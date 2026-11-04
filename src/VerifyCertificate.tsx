@@ -3,6 +3,7 @@ import { ShieldCheck, CheckCircle2, XCircle, ArrowLeft, Building2, Calendar, Use
 
 type VerificationData = {
   valid: boolean;
+  recordOnly?: boolean;
   id?: string;
   number?: string;
   employeeName?: string;
@@ -119,7 +120,7 @@ export function VerifyCertificate({ onBack }: { onBack: () => void }) {
               <ShieldCheck size={40} color="#0e8362" />
               <div>
                 <h2>DOKUMEN ASLI & TERVERIFIKASI</h2>
-                <p>Surat Keterangan Cuti ini sah terdaftar pada pangkalan data Divisi SDM BNI.</p>
+                <p>{data.recordOnly?'Data cuti ini tercatat dalam sistem.':'Surat Keterangan Cuti ini sah terdaftar pada pangkalan data Divisi SDM BNI.'}</p>
               </div>
             </div>
 
@@ -130,10 +131,10 @@ export function VerifyCertificate({ onBack }: { onBack: () => void }) {
                 <span className="verify-value doc-code">{data.number}</span>
               </div>
               <div className="verify-meta-row">
-                <span className="verify-label">Status Persetujuan:</span>
+                <span className="verify-label">{data.recordOnly?'Status Pencatatan:':'Status Persetujuan:'}</span>
                 <span className="verify-status-tag">
                   <CheckCircle2 size={14} color="#0e8362" />
-                  {data.status === 'APPROVED' ? 'DISETUJUI OLEH SDM' : data.status}
+                  {data.recordOnly?'TERCATAT':data.status === 'APPROVED' ? 'DISETUJUI OLEH SDM' : data.status}
                 </span>
               </div>
 

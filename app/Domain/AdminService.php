@@ -49,7 +49,7 @@ final class AdminService
         if (! empty($body['id'])) {
             CutiError::check($existing && empty($existing['deletedAt']) && $existing['unit'] === $actor['unit'], 'Pegawai tidak ditemukan.', 404);
         } else {
-            CutiError::check(! empty($body['password']), 'Kata sandi awal wajib diisi.');
+            CutiError::check((config('cuti.public_form') && ! in_array('ADMIN', $body['roles'], true)) || ! empty($body['password']), 'Kata sandi awal wajib diisi untuk akun admin.');
         }
         if (($body['id'] ?? '') === $actor['id']) {
             CutiError::check($body['active'] && in_array('ADMIN', $body['roles'], true), 'Anda tidak dapat menonaktifkan akses admin sendiri.');
@@ -70,7 +70,7 @@ final class AdminService
         $password = $body['password'] ?? null;
         unset($body['password'], $body['id']);
         $employee = [...$body, 'id' => $id, 'unit' => $actor['unit'], 'email' => strtolower($body['email']), 'outletId' => $outlet, 'positionName' => $position[1]];
-        $passwordHash = $password ? password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]) : DB::table('employees')->where('id', $id)->value('password_hash');
+        $passwordHash = $password ? password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]) : (DB::table('employees')->where('id', $id)->value('password_hash') ?? password_hash(Str::random(64), PASSWORD_BCRYPT));
         CutiError::check(! DB::table('employees')->where('email', $employee['email'])->where('id', '!=', $id)->exists(), 'Email sudah terdaftar. Gunakan email lain.', 409);
         DB::table('employees')->updateOrInsert(['id' => $id], ['unit_id' => $actor['unit'], 'email' => $employee['email'], 'password_hash' => $passwordHash, 'data' => CutiStore::json($employee)]);
         if ($existing && ($password || $existing['roles'] !== $employee['roles'] || ! $employee['active'])) {
@@ -84,7 +84,7 @@ final class AdminService
     private function checkUnassigned(array $employee): void
     {
         $all = $this->store->requests($employee['unit']);
-        CutiError::check(! collect($all)->contains(fn ($r) => $r['employeeId'] === $employee['id'] && ($r['status'] === 'PENDING_SDM' || ($r['status'] === 'APPROVED' && $r['effectiveEnd'] >= LeaveRules::today()))), 'Selesaikan pengajuan yang menunggu review atau cuti aktif sebelum mengubah karyawan.', 409);
+        CutiError::check(! collect($all)->contains(fn ($r) => $r['employeeId'] === $employee['id'] && ($r['status'] === 'PENDING_SDM' || (in_array($r['status'], ['APPROVED', 'RECORDED'], true) && $r['effectiveEnd'] >= LeaveRules::today()))), 'Selesaikan pengajuan yang menunggu review atau cuti aktif sebelum mengubah karyawan.', 409);
         CutiError::check(! collect($all)->contains(fn ($r) => ReplacementService::assignedDuring($r, $employee['id'])), 'Karyawan masih memiliki tugas PGS aktif.', 409);
     }
 
@@ -123,7 +123,7 @@ final class AdminService
         CutiError::check(! collect($this->store->employees($actor['unit']))->contains(fn ($e) => CutiStore::outletId($e) === $id), 'Pindahkan semua karyawan dari outlet ini sebelum menghapusnya.', 409);
         $policy = $this->store->policy($actor['unit']);
         CutiError::check(! collect($policy['replacementRules'] ?? [])->contains(fn ($r) => in_array($id, $r['outletIds'], true)), 'Hapus outlet ini dari aturan PGS terlebih dahulu.', 409);
-        CutiError::check(! collect($this->store->requests($actor['unit']))->contains(fn ($r) => (($r['outletId'] ?? '') === $id && ($r['status'] === 'PENDING_SDM' || ($r['status'] === 'APPROVED' && $r['effectiveEnd'] >= LeaveRules::today()))) || (($r['replacement']['outletId'] ?? '') === $id && ReplacementService::assignedDuring($r, $r['replacement']['employeeId']))), 'Outlet masih dipakai cuti atau tugas PGS aktif.', 409);
+        CutiError::check(! collect($this->store->requests($actor['unit']))->contains(fn ($r) => (($r['outletId'] ?? '') === $id && ($r['status'] === 'PENDING_SDM' || (in_array($r['status'], ['APPROVED', 'RECORDED'], true) && $r['effectiveEnd'] >= LeaveRules::today()))) || (($r['replacement']['outletId'] ?? '') === $id && ReplacementService::assignedDuring($r, $r['replacement']['employeeId']))), 'Outlet masih dipakai cuti atau tugas PGS aktif.', 409);
         DB::table('outlets')->where('id', $id)->update(['data' => CutiStore::json([...$outlet, 'deletedAt' => LeaveRules::timestamp()])]);
         $this->store->audit($actor, 'OUTLET_DELETE', $id);
 
@@ -148,7 +148,7 @@ final class AdminService
         CutiError::check(collect(LeaveRules::positions($policy))->contains(fn ($p) => $p[0] === $code), 'Posisi tidak ditemukan.', 404);
         CutiError::check(! collect($this->store->employees($actor['unit']))->contains('position', $code), 'Pindahkan semua karyawan dari posisi ini sebelum menghapusnya.', 409);
         CutiError::check(! collect($policy['replacementRules'] ?? [])->contains(fn ($rule, $target) => $target !== $code && in_array($code, $rule['sourcePositions'], true)), 'Hapus posisi ini dari calon PGS pada aturan lain terlebih dahulu.', 409);
-        CutiError::check(! collect($this->store->requests($actor['unit']))->contains(fn ($r) => $r['position'] === $code && ($r['status'] === 'PENDING_SDM' || ($r['status'] === 'APPROVED' && $r['effectiveEnd'] >= LeaveRules::today()))), 'Posisi masih memiliki cuti aktif.', 409);
+        CutiError::check(! collect($this->store->requests($actor['unit']))->contains(fn ($r) => $r['position'] === $code && ($r['status'] === 'PENDING_SDM' || (in_array($r['status'], ['APPROVED', 'RECORDED'], true) && $r['effectiveEnd'] >= LeaveRules::today()))), 'Posisi masih memiliki cuti aktif.', 409);
         $policy['positions'] = array_values(array_filter(LeaveRules::positions($policy), fn ($p) => $p[0] !== $code));
         unset($policy['replacementRules'][$code]);
         $this->store->savePolicy($actor['unit'], $policy);

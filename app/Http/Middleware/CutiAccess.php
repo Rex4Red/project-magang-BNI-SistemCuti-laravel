@@ -28,19 +28,28 @@ class CutiAccess
             CutiError::check((int) $request->header('Content-Length', 0) <= 40960, 'Data terlalu besar.', 413);
         }
         $path = $request->path();
+        $publicForm = in_array($path, ['api/public/form', 'api/public/preview', 'api/public/requests'], true);
+        if ($publicForm) {
+            CutiError::check(config('cuti.public_form'), 'Formulir tidak tersedia.', 404);
+            $key = $path.':'.$request->ip();
+            $limit = $path === 'api/public/requests' ? 10 : 120;
+            CutiError::check(! RateLimiter::tooManyAttempts($key, $limit), 'Terlalu banyak permintaan. Coba lagi dalam 15 menit.', 429);
+            RateLimiter::hit($key, 900);
+        }
         if ($path === 'api/login' || $path === 'api/verify-certificate') {
             $key = $path.':'.$request->ip();
             $limit = $path === 'api/login' ? 30 : 120;
             CutiError::check(! RateLimiter::tooManyAttempts($key, $limit), 'Terlalu banyak percobaan. Coba lagi dalam 15 menit.', 429);
             RateLimiter::hit($key, 900);
         }
-        if (! in_array($path, ['api/health', 'api/config', 'api/login', 'api/verify-certificate'], true)) {
+        if (! $publicForm && ! in_array($path, ['api/health', 'api/config', 'api/login', 'api/verify-certificate'], true)) {
             $token = $request->cookie(config('cuti.cookie'));
             CutiError::check(is_string($token) && strlen($token) === 64, 'Silakan masuk kembali.', 401);
             $hash = CutiStore::digest($token);
             $session = DB::table('cuti_sessions')->where('token', $hash)->where('expires_at', '>', now('UTC'))->first();
             $actor = $session ? app(CutiStore::class)->employee($session->employee_id) : null;
             CutiError::check($actor && $actor['active'] && empty($actor['deletedAt']), 'Sesi berakhir. Silakan masuk kembali.', 401);
+            CutiError::check(! config('cuti.public_form') || in_array('ADMIN', $actor['roles'], true), 'Silakan gunakan formulir pengajuan tanpa login.', 401);
             $request->attributes->set('actor', $actor);
             $request->attributes->set('session_hash', $hash);
             if (str_starts_with($path, 'api/admin')) {

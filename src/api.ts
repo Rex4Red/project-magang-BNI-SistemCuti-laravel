@@ -31,4 +31,4 @@ export async function api<T=any>(path:string,options:{method?:string;body?:unkno
   if(data===null||typeof data!=='object')throw new ApiError('Respons server tidak dapat dibaca. Coba lagi.',502);
   return data;
 }
-export const action=(path:string,body:unknown,key=crypto.randomUUID())=>api(path,{method:'POST',body,key});
+export const action=(path:string,body:unknown,key:string=crypto.randomUUID())=>api(path,{method:'POST',body,key});

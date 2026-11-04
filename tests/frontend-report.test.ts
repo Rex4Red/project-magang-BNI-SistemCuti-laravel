@@ -6,6 +6,14 @@ const actor:Employee={id:'sdm',name:'Petugas SDM Uji',email:'sdm@example.test',p
 const leave:Leave={id:'one',number:'CT-PDF-001',employeeId:'staff',employeeName:'Pegawai Uji',position:'CS_BINA',unit:'KC01',category:'REGULAR',subtype:'Keluarga',reason:'ALASAN PRIVAT TIDAK BOLEH DIEKSPOR',start:'2026-11-02',end:'2026-11-05',email:'private@example.test',phone:'081234567891',days:['2026-11-02','2026-11-03','2026-11-04','2026-11-05'],effectiveStart:'2026-11-02',effectiveEnd:'2026-11-05',duration:4,createdAt:'2026-10-01T00:00:00Z',submittedAt:'2026-10-15T06:07:08Z',status:'PENDING_SDM',confirmation:'NOT_CONFIRMED',version:1,calendarVersion:1,limit:2,events:[]};
 
 describe('Laporan PDF monitoring',()=>{
+  it('laporan pencatatan menampilkan status tercatat tanpa ringkasan approval',()=>{
+    const doc=buildPdfReport({rows:[{...leave,status:'RECORDED'}],actor,month:'all',unitName:'Cabang Uji',recordOnly:true});
+    const pdf=doc.output();
+    expect(pdf).toContain('Tercatat: 1');
+    expect(pdf).not.toContain('Disetujui:');
+    expect(pdf).not.toContain('Menunggu:');
+    expect(pdf).not.toContain('Ditolak:');
+  });
   it('menghasilkan PDF A4 portrait dengan waktu WIB dan tanpa alasan atau kontak pribadi',()=>{
     const doc=buildPdfReport({rows:[leave],actor,month:'all',unitName:'Cabang Uji',positionLabelFn:()=> 'CS BINA'});
     expect(doc.internal.pageSize.getWidth()).toBeCloseTo(210,0);

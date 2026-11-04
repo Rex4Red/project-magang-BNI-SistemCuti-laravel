@@ -29,7 +29,7 @@ final class CutiController extends Controller
 
     public function configuration(): JsonResponse
     {
-        return response()->json(['demo' => config('cuti.demo'), 'today' => LeaveRules::today(), 'mailMode' => config('cuti.mail_mode')]);
+        return response()->json(['demo' => config('cuti.demo'), 'publicForm' => config('cuti.public_form'), 'today' => LeaveRules::today(), 'mailMode' => config('cuti.mail_mode')]);
     }
 
     public function login(Request $request): JsonResponse
@@ -43,6 +43,7 @@ final class CutiController extends Controller
             $fallback = '$2y$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.';
             $valid = password_verify($body['password'], $row->password_hash ?? $fallback);
             CutiError::check($actor && $actor['active'] && empty($actor['deletedAt']) && $valid, 'Email atau kata sandi tidak sesuai.', 401);
+            CutiError::check(! config('cuti.public_form') || in_array('ADMIN', $actor['roles'], true), 'Login hanya untuk admin. Gunakan formulir untuk mengajukan cuti.', 403);
             $token = bin2hex(random_bytes(32));
             DB::table('cuti_sessions')->insert(['token' => CutiStore::digest($token), 'employee_id' => $actor['id'], 'expires_at' => now('UTC')->addHours(8)]);
             $secure = str_starts_with(config('app.url'), 'https://') || $request->isSecure();
@@ -90,7 +91,7 @@ final class CutiController extends Controller
         $actor = $request->attributes->get('actor');
         $all = $this->store->requests($actor['unit']);
         $policy = $this->store->policy($actor['unit']);
-        $sdm = in_array('SDM', $actor['roles'], true);
+        $sdm = CutiStore::canReview($actor);
         $visible = array_values(array_filter($all, fn ($r) => $sdm ? $r['status'] !== 'DRAFT' : ($r['employeeId'] === $actor['id'] || ($r['replacement']['employeeId'] ?? '') === $actor['id'])));
         usort($visible, fn ($a, $b) => strcmp($b['createdAt'], $a['createdAt']));
         $quotas = [];
@@ -129,7 +130,7 @@ final class CutiController extends Controller
     public function replacements(Request $request, string $id): JsonResponse
     {
         $actor = $request->attributes->get('actor');
-        CutiError::check(in_array('SDM', $actor['roles'], true), 'Akses SDM diperlukan.', 403);
+        CutiError::check(CutiStore::canReview($actor), 'Akses petugas review diperlukan.', 403);
 
         return response()->json($this->replacements->check($this->store->findLeave($actor, $id), $this->store->policy($actor['unit'])));
     }
@@ -175,7 +176,7 @@ final class CutiController extends Controller
     public function report(Request $request, string $format): Response
     {
         $actor = $request->attributes->get('actor');
-        CutiError::check(in_array('SDM', $actor['roles'], true), 'Akses SDM diperlukan.', 403);
+        CutiError::check(CutiStore::canReview($actor), 'Akses petugas review diperlukan.', 403);
         $month = $this->month($request, true);
         $rows = array_values(array_filter($this->store->requests($actor['unit']), fn ($r) => $r['status'] !== 'DRAFT' && ($month === 'all' || str_starts_with($r['effectiveStart'], $month))));
         $this->store->audit($actor, 'EXPORT', $month);
@@ -193,7 +194,9 @@ final class CutiController extends Controller
             return response()->json(['valid' => false, 'message' => 'Surat keterangan cuti tidak ditemukan dalam sistem.'], 404);
         }
 
-        return response()->json(['valid' => $found['status'] === 'APPROVED', 'id' => $found['id'], 'number' => $found['number'], 'employeeName' => $found['employeeName'], 'unitName' => DB::table('units')->where('id', $found['unit'])->value('name'), 'position' => $found['positionName'] ?? $found['position'], 'category' => $found['category'] === 'REGULAR' ? 'Cuti Reguler' : 'Cuti Darurat', 'subtype' => $found['subtype'], 'status' => $found['status'], 'effectiveStart' => $found['effectiveStart'], 'effectiveEnd' => $found['effectiveEnd'], 'duration' => $found['duration'], 'replacement' => isset($found['replacement']) ? array_intersect_key($found['replacement'], array_flip(['employeeName', 'position', 'outletName'])) : null, 'verifiedAt' => LeaveRules::timestamp()]);
+        $recordOnly = config('cuti.public_form') || $found['status'] === 'RECORDED';
+
+        return response()->json(['valid' => $recordOnly ? in_array($found['status'], LeaveRules::ACTIVE, true) : $found['status'] === 'APPROVED', 'recordOnly' => $recordOnly, 'id' => $found['id'], 'number' => $found['number'], 'employeeName' => $found['employeeName'], 'unitName' => DB::table('units')->where('id', $found['unit'])->value('name'), 'position' => $found['positionName'] ?? $found['position'], 'category' => $found['category'] === 'REGULAR' ? 'Cuti Reguler' : 'Cuti Darurat', 'subtype' => $found['subtype'], 'status' => $found['status'], 'effectiveStart' => $found['effectiveStart'], 'effectiveEnd' => $found['effectiveEnd'], 'duration' => $found['duration'], 'replacement' => isset($found['replacement']) ? array_intersect_key($found['replacement'], array_flip(['employeeName', 'position', 'outletName'])) : null, 'verifiedAt' => LeaveRules::timestamp()]);
     }
 
     private function month(Request $request, bool $allowAll = false): string

@@ -119,7 +119,12 @@ final class CutiStore
 
     public static function canRead(array $actor, array $leave): bool
     {
-        return $actor['unit'] === $leave['unit'] && ($actor['id'] === $leave['employeeId'] || $actor['id'] === ($leave['replacement']['employeeId'] ?? null) || in_array('SDM', $actor['roles'], true));
+        return $actor['unit'] === $leave['unit'] && ($actor['id'] === $leave['employeeId'] || $actor['id'] === ($leave['replacement']['employeeId'] ?? null) || self::canReview($actor));
+    }
+
+    public static function canReview(array $actor): bool
+    {
+        return config('cuti.public_form') ? in_array('ADMIN', $actor['roles'], true) : in_array('SDM', $actor['roles'], true);
     }
 
     public function findLeave(array $actor, string $id): array

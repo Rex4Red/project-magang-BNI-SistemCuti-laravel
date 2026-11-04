@@ -2,8 +2,13 @@
 
 use App\Domain\CutiError;
 use App\Http\Controllers\CutiController;
+use App\Http\Controllers\PublicLeaveController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+
+Route::get('public/form', [PublicLeaveController::class, 'configuration']);
+Route::post('public/preview', [PublicLeaveController::class, 'preview']);
+Route::post('public/requests', [PublicLeaveController::class, 'submit']);
 
 Route::controller(CutiController::class)->group(function () {
     Route::get('health', 'health');

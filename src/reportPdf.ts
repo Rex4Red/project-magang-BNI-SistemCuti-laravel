@@ -9,6 +9,7 @@ type ReportOptions = {
   month: string;
   unitName: string;
   positionLabelFn?: (pos: string) => string;
+  recordOnly?: boolean;
 };
 
 export function buildPdfReport({
@@ -17,6 +18,7 @@ export function buildPdfReport({
   month,
   unitName,
   positionLabelFn,
+  recordOnly = false,
 }: ReportOptions): jsPDF {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -58,7 +60,7 @@ export function buildPdfReport({
   doc.setFontSize(8);
   doc.setTextColor(90, 115, 124);
   const unitLines = doc.splitTextToSize(
-    `Unit Kerja: ${unitName} (${actor.unit})   |   Petugas SDM: ${actor.name} (${actor.positionName || getPosName(actor.position)})`,
+    `Unit Kerja: ${unitName} (${actor.unit})   |   ${recordOnly?'Admin':'Petugas SDM'}: ${actor.name} (${actor.positionName || getPosName(actor.position)})`,
     182
   ) as string[];
   doc.text(unitLines, 14, 26);
@@ -94,9 +96,14 @@ export function buildPdfReport({
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(30, 50, 58);
   doc.text(`Total: ${total} data`, 36, summaryTextY);
-  doc.text(`Disetujui: ${approved}`, 64, summaryTextY);
-  doc.text(`Menunggu: ${pending}`, 95, summaryTextY);
-  doc.text(`Ditolak: ${rejected}`, 129, summaryTextY);
+  if (recordOnly) {
+    doc.text(`Tercatat: ${rows.filter(r=>r.status==='RECORDED').length}`, 68, summaryTextY);
+    doc.text(`Karyawan: ${new Set(rows.filter(r=>r.status==='RECORDED').map(r=>r.employeeId)).size}`, 103, summaryTextY);
+  } else {
+    doc.text(`Disetujui: ${approved}`, 64, summaryTextY);
+    doc.text(`Menunggu: ${pending}`, 95, summaryTextY);
+    doc.text(`Ditolak: ${rejected}`, 129, summaryTextY);
+  }
   doc.text(`Total Durasi: ${totalDays} hari kerja`, 150, summaryTextY);
 
   // 3. Data Table (Portrait width: 182mm)

@@ -4,6 +4,12 @@ Versi terpisah dari project Node/Express pada commit 44d1fe7afa0ccfd68736a381813
 
 Pembaruan Node disinkronkan sampai commit `9ce4e4e`: laporan PDF A4 portrait, waktu pengajuan lengkap dalam WIB, pengurutan antrean, penanganan gangguan frontend, dan pemulihan akun demo khusus lingkungan nonproduksi.
 
+Halaman utama berupa formulir pengajuan tanpa login. Pemohon mengisi nama, email, nomor HP, outlet, posisi, jenis, alasan, dan tanggal cuti. Pengajuan yang memenuhi aturan langsung berstatus `RECORDED` (Tercatat), tanpa review, konfirmasi, atau persetujuan. Kuota, kalender, dan benturan tanggal langsung memperhitungkan pencatatan ini. Admin login untuk mengatur sistem, memonitor data cuti, dan mengunduh laporan.
+
+Gunakan email yang sama pada setiap pengajuan: kuota bulanan tetap menghitung karyawan unik. Data identitas yang sudah tersimpan harus cocok; perubahan posisi atau outlet dilakukan admin. Data pemohon baru masuk ke direktori tanpa akses login. Data baru dapat menjadi calon PGS setelah diperiksa dan disimpan oleh admin di direktori karyawan. Jika aturan PGS aktif, sistem memeriksa ketersediaan pengganti saat pencatatan; jadwal tanpa calon yang tersedia ditolak oleh validasi. Formulir publik menampilkan bukti pencatatan, tanpa akses ke riwayat pribadi atau direktori karyawan. Email pemohon berisi bukti pencatatan; pemberitahuan admin tetap dijadwalkan satu bulan sebelum cuti reguler atau langsung untuk cuti darurat.
+
+`CUTI_PUBLIC_FORM=true` adalah pengaturan bawaan. `false` mempertahankan alur login sebelumnya untuk kebutuhan transisi. Pengujian alur lama memakai pengaturan ini; pengujian formulir publik mengaktifkannya secara eksplisit.
+
 Node.js hanya diperlukan saat membangun tampilan atau menjalankan pengujian frontend. Hosting menjalankan PHP; tidak perlu proses Node atau queue worker yang hidup terus.
 
 ## Kebutuhan
@@ -49,6 +55,8 @@ Pada Windows, ganti cp dengan Copy-Item. Instalasi lokal hasil migrasi menyimpan
 ## Akun demonstrasi
 
 Hanya tersedia setelah setup demo, atau jika ikut diimpor dari data lama.
+
+Dalam alur formulir publik hanya akun admin yang dapat login. Akun SDM dan karyawan lama tetap tersimpan sebagai data; login keduanya tersedia hanya pada alur transisi (`CUTI_PUBLIC_FORM=false`).
 
 | Peran | Email |
 |---|---|

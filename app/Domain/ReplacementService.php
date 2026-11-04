@@ -13,7 +13,7 @@ final class ReplacementService
 
     public static function assignedDuring(array $leave, string $employee, ?string $today = null): bool
     {
-        return $leave['status'] === 'APPROVED' && $leave['effectiveEnd'] >= ($today ?? LeaveRules::today()) && ($leave['replacement']['employeeId'] ?? null) === $employee;
+        return in_array($leave['status'], ['APPROVED', 'RECORDED'], true) && $leave['effectiveEnd'] >= ($today ?? LeaveRules::today()) && ($leave['replacement']['employeeId'] ?? null) === $employee;
     }
 
     public function check(array $leave, array $policy): array
@@ -27,7 +27,7 @@ final class ReplacementService
         $candidates = [];
         if ($rule['enabled'] ?? false) {
             foreach ($staff as $person) {
-                if ($person['id'] === $leave['employeeId'] || ! $person['active'] || ! in_array('EMPLOYEE', $person['roles'], true) || ! in_array($person['position'], $rule['sourcePositions'], true)) {
+                if ($person['id'] === $leave['employeeId'] || ! $person['active'] || ! empty($person['publicApplicant']) || ! in_array('EMPLOYEE', $person['roles'], true) || ! in_array($person['position'], $rule['sourcePositions'], true)) {
                     continue;
                 }
                 $location = collect($locations)->firstWhere('id', CutiStore::outletId($person));
@@ -39,7 +39,7 @@ final class ReplacementService
                     continue;
                 }
                 $own = collect($all)->contains(fn ($r) => $r['employeeId'] === $person['id'] && in_array($r['status'], LeaveRules::ACTIVE, true) && self::overlaps($r['days'], $leave['days']));
-                $assignment = collect($all)->contains(fn ($r) => $r['id'] !== $leave['id'] && $r['status'] === 'APPROVED' && ($r['replacement']['employeeId'] ?? null) === $person['id'] && self::overlaps($r['days'], $leave['days']));
+                $assignment = collect($all)->contains(fn ($r) => $r['id'] !== $leave['id'] && in_array($r['status'], ['APPROVED', 'RECORDED'], true) && ($r['replacement']['employeeId'] ?? null) === $person['id'] && self::overlaps($r['days'], $leave['days']));
                 $candidates[] = ['id' => $person['id'], 'name' => $person['name'], 'phone' => $person['phone'], 'email' => $person['email'], 'position' => $person['position'], 'positionName' => $person['positionName'] ?? $person['position'], 'outletId' => $location['id'], 'outletName' => $location['name'], 'available' => ! $own && ! $assignment, 'reason' => $own ? 'Sedang cuti atau menunggu review' : ($assignment ? 'Sudah bertugas sebagai PGS' : 'Tersedia selama seluruh tanggal cuti')];
             }
         }
