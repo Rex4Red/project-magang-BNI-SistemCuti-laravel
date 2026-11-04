@@ -78,9 +78,9 @@ export function PublicLeaveForm({DatePicker, onAdmin}:{DatePicker:DateField;onAd
     <main className="public-main">
       {receipt ? <section className="public-sheet public-success" aria-labelledby="receipt-title">
         <CheckCircle2 size={38} aria-hidden="true"/>
-        <h1 id="receipt-title">Cuti berhasil dicatat</h1><p>Data cuti Anda sudah masuk ke sistem. Bukti pencatatan akan dikirim melalui email yang diisi.</p>
+        <h1 id="receipt-title">Cuti berhasil dicatat</h1>
         <dl><dt>Nomor pengajuan</dt><dd><strong>{receipt.number}</strong></dd><dt>Tanggal cuti</dt><dd>{formatDate(receipt.effectiveStart)} s.d. {formatDate(receipt.effectiveEnd)}</dd><dt>Durasi</dt><dd>{receipt.duration} hari kerja</dd><dt>Status</dt><dd>Tercatat</dd></dl>
-        <p className="public-note">Simpan nomor pengajuan ini untuk menghubungi admin.</p><button className="button secondary" onClick={()=>{setReceipt(null);setInput({...input,subtype:'',reason:'',start:'',end:''});setPreview(null);key.current=null;}}>Buat pengajuan lain</button>
+        <button className="button secondary" onClick={()=>{setReceipt(null);setInput({...input,subtype:'',reason:'',start:'',end:''});setPreview(null);key.current=null;}}>Buat pengajuan lain</button>
       </section> : <section className="public-sheet" aria-labelledby="public-title">
         <div className="public-intro"><h1 id="public-title">Pengajuan cuti</h1><p>Isi formulir berikut untuk mencatat jadwal cuti Anda.</p></div>
         {loadError ? <div className="alert danger" role="alert">{loadError}<button type="button" onClick={()=>setReload(value=>value+1)}>Coba lagi</button></div> : !config ? <p role="status">Memuat formulir cuti…</p> : !config.units.some(unit=>unit.outlets.length&&unit.positions.length) ? <p>Formulir belum tersedia. Hubungi admin untuk mengatur outlet dan posisi.</p> :
@@ -103,7 +103,7 @@ export function PublicLeaveForm({DatePicker, onAdmin}:{DatePicker:DateField;onAd
               {checking ? <p role="status">Memeriksa jadwal dan kuota…</p> : preview ? <><div className="public-duration"><strong>{preview.duration} hari kerja</strong><span>{preview.quota.available} dari {preview.quota.limit} slot posisi tersedia</span></div>{preview.adjusted&&preview.effectiveEnd&&<label className="checkbox public-adjustment"><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/>Saya setuju tanggal akhir disesuaikan menjadi {formatDate(preview.effectiveEnd)} mengikuti kalender kerja dan batas akhir bulan.</label>}{preview.errors.map(issue=><p className="public-error" key={issue.code}>{issue.message}</p>)}</> : <p>Durasi dan ketersediaan kuota dihitung setelah formulir dilengkapi.</p>}
             </div>
             {error&&<div className="alert danger" role="alert">{error}</div>}
-            <div className="public-submit"><button className="button primary" disabled={busy||checking||!preview||preview.errors.length>0||(preview.adjusted&&!accepted)}>{busy?'Mengirim…':'Kirim pengajuan'}</button><span>Bukti pencatatan dikirim melalui email.</span></div>
+            <div className="public-submit"><button className="button primary" disabled={busy||checking||!preview||preview.errors.length>0||(preview.adjusted&&!accepted)}>{busy?'Mengirim…':'Kirim pengajuan'}</button></div>
           </fieldset>
         </form>}
       </section>}
