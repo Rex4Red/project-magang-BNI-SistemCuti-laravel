@@ -67,6 +67,10 @@ class PublicLeaveFormTest extends TestCase
         $input = $this->input();
         $key = (string) Str::uuid();
         $receipt = $this->submit($input, $key);
+        $operation = DB::table('operations')->where('key', $key)->first();
+        $storedResult = CutiStore::decode($operation->result);
+        ksort($storedResult);
+        DB::table('operations')->where('key', $key)->update(['result' => CutiStore::json($storedResult)]);
         $this->assertSame($receipt, $this->submit($input, $key));
         $this->submit($this->input(['start' => '2026-12-14', 'end' => '2026-12-15']));
         $this->assertSame(1, DB::table('employees')->where('email', 'form@example.test')->count());

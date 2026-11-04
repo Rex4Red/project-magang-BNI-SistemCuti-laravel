@@ -53,7 +53,13 @@ final class PublicLeaveService
             }
             $leave = $this->leaves->submit($actor, [...$input, 'fingerprint' => $preview['fingerprint'], 'acceptAdjustment' => ($body['acceptAdjustment'] ?? false) === true], $key);
 
-            return array_intersect_key($leave, array_flip(['number', 'status', 'effectiveStart', 'effectiveEnd', 'duration']));
+            return [
+                'number' => $leave['number'],
+                'status' => $leave['status'],
+                'effectiveStart' => $leave['effectiveStart'],
+                'effectiveEnd' => $leave['effectiveEnd'],
+                'duration' => $leave['duration'],
+            ];
         }, 3);
     }
 
