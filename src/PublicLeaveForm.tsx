@@ -56,7 +56,7 @@ export function PublicLeaveForm({DatePicker, onAdmin}:{DatePicker:DateField;onAd
   }
   function updateInput(field:keyof LeaveInput,value:string) {
     key.current=null;
-    setInput(previous=>({...previous,[field]:value,...(field==='category'?{subtype:'',start:'',end:''}:{}),...(field==='start'?{end:value}:{})}));
+    setInput(previous=>({...previous,[field]:value,...(field==='category'?{subtype:'',start:'',end:''}:{}),...(field==='start'?{end:''}:{})}));
   }
   async function submit(event:FormEvent) {
     event.preventDefault();

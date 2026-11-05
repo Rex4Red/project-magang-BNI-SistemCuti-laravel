@@ -145,28 +145,26 @@ class PublicLeaveFormTest extends TestCase
         $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson('/api/admin/employee', ['name' => 'Data Tanpa Akun', 'email' => 'directory@example.test', 'phone' => '081234567899', 'position' => 'BM', 'outletId' => 'KC01-MAIN', 'roles' => ['EMPLOYEE'], 'active' => true])->assertOk();
     }
 
-    public function test_public_request_is_still_blocked_when_pgs_is_unavailable(): void
+    public function test_public_requests_ignore_pgs_rules_and_existing_assignments(): void
     {
         $store = app(CutiStore::class);
         $policy = $store->policy('KC01');
         $policy['replacementRules']['BM'] = ['position' => 'BM', 'enabled' => true, 'sourcePositions' => ['BMB'], 'sameOutlet' => true, 'otherOutlets' => 'ALL', 'outletIds' => []];
         $store->savePolicy('KC01', $policy);
         $input = $this->input(['category' => 'EMERGENCY', 'start' => '2026-11-05', 'end' => '2026-11-05']);
-        $this->postJson('/api/public/preview', $input)->assertOk()->assertJsonFragment(['code' => 'NO_REPLACEMENT']);
-        $this->loginAdmin();
-        $candidateInput = $this->input(['name' => 'Calon Pengganti', 'email' => 'candidate@example.test', 'position' => 'BMB', 'category' => 'EMERGENCY', 'start' => '2026-11-05', 'end' => '2026-11-05']);
-        $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson('/api/admin/employee', [...$candidateInput, 'roles' => ['EMPLOYEE'], 'active' => true])->assertOk();
-        $preview = $this->postJson('/api/public/preview', $input)->assertOk()->assertJsonPath('errors', [])->json();
-        $candidateReceipt = $this->submit($candidateInput);
-        $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson('/api/public/requests', [...$input, 'fingerprint' => $preview['fingerprint']])->assertUnprocessable()->assertJsonPath('code', 'NO_REPLACEMENT');
-        $this->assertDatabaseMissing('employees', ['email' => 'form@example.test']);
-        $busy = collect($store->requests())->firstWhere('number', $candidateReceipt['number']);
-        $store->saveRequest([...$busy, 'days' => ['2026-11-09'], 'effectiveStart' => '2026-11-09', 'effectiveEnd' => '2026-11-09']);
+        $this->postJson('/api/public/preview', $input)->assertOk()->assertJsonPath('errors', []);
         $receipt = $this->submit($input);
         $this->assertSame('RECORDED', $receipt['status']);
         $leave = collect($store->requests())->firstWhere('number', $receipt['number']);
-        $this->assertArrayHasKey('replacementCheckedAt', $leave);
-        $this->assertTrue(app(ReplacementService::class)->check($leave, $policy)['candidates'][0]['available']);
+        $this->assertArrayNotHasKey('replacementCheckedAt', $leave);
+        $this->assertFalse(collect(app(ReplacementService::class)->check($leave, $policy)['candidates'])->contains('available', true));
+
+        $store->saveRequest([...$leave, 'id' => (string) Str::uuid(), 'employeeId' => 'staff0', 'position' => 'TELLER',
+            'days' => ['2026-11-06'], 'effectiveStart' => '2026-11-06', 'effectiveEnd' => '2026-11-06',
+            'replacement' => ['employeeId' => $leave['employeeId']]]);
+        $nextInput = [...$input, 'start' => '2026-11-06', 'end' => '2026-11-06'];
+        $this->postJson('/api/public/preview', $nextInput)->assertOk()->assertJsonPath('errors', []);
+        $this->assertSame('RECORDED', $this->submit($nextInput)['status']);
     }
 
     public function test_regular_receipt_is_immediate_and_admin_notice_keeps_the_scheduled_date(): void

@@ -33,17 +33,8 @@ final class LeaveService
         $all = $this->store->requests();
         $local = array_filter($all, fn ($r) => $r['unit'] === $actor['unit']);
         $result = LeaveRules::evaluate($input, $actor, $all, $policy['calendar'], LeaveRules::limitFor($actor['position'], substr($input['start'], 0, 7), $policy, $local), LeaveRules::today());
-        if (collect($local)->contains(fn ($r) => ReplacementService::assignedDuring($r, $actor['id']) && ReplacementService::overlaps($r['days'], $result['days']))) {
+        if (! config('cuti.public_form') && collect($local)->contains(fn ($r) => ReplacementService::assignedDuring($r, $actor['id']) && ReplacementService::overlaps($r['days'], $result['days']))) {
             $result['errors'][] = ['code' => 'PGS_DUTY', 'message' => 'Anda memiliki tugas PGS pada tanggal tersebut. Hubungi SDM sebelum mengajukan cuti.'];
-        }
-        if (config('cuti.public_form') && ! $result['errors'] && ($policy['replacementRules'][$actor['position']]['enabled'] ?? false)) {
-            $replacement = $this->replacements->check([
-                ...$input, 'id' => '', 'employeeId' => $actor['id'], 'position' => $actor['position'],
-                'unit' => $actor['unit'], 'outletId' => CutiStore::outletId($actor), 'days' => $result['days'],
-            ], $policy);
-            if (! collect($replacement['candidates'])->contains('available', true)) {
-                $result['errors'][] = ['code' => 'NO_REPLACEMENT', 'message' => 'Belum ada PGS yang tersedia sesuai aturan posisi dan outlet. Pilih jadwal lain atau hubungi admin.'];
-            }
         }
         $result['fingerprint'] = CutiStore::digest(['input' => $input, 'days' => $result['days'], 'calendar' => $policy['calendar'], 'position' => $actor['position'], 'unit' => $actor['unit'], 'today' => LeaveRules::today()]);
         if ($result['effectiveStart']) {
@@ -72,8 +63,8 @@ final class LeaveService
             $location = collect($this->store->outlets($actor['unit']))->firstWhere('id', CutiStore::outletId($actor));
             CutiError::check($location, 'Outlet karyawan tidak tersedia. Hubungi administrator.');
             $policy = $this->store->policy($actor['unit']);
-            $requiresPgs = ($policy['replacementRules'][$actor['position']]['enabled'] ?? false);
             $recordOnly = (bool) config('cuti.public_form');
+            $requiresPgs = ! $recordOnly && ($policy['replacementRules'][$actor['position']]['enabled'] ?? false);
             $status = $recordOnly ? 'RECORDED' : ($requiresPgs ? 'PENDING_SDM' : 'APPROVED');
             $now = LeaveRules::timestamp();
             $eventText = $recordOnly ? 'Cuti tercatat melalui formulir' : ($requiresPgs ? 'Pengajuan dikirim untuk review' : 'Pengajuan disetujui otomatis');
@@ -82,9 +73,6 @@ final class LeaveService
             if (config('cuti.public_form')) {
                 $leave['submittedVia'] = 'PUBLIC_FORM';
                 $leave['identityVerified'] = false;
-                if ($requiresPgs) {
-                    $leave['replacementCheckedAt'] = $now;
-                }
             }
             $this->store->saveRequest($leave);
             $this->store->audit($actor, 'SUBMIT', $id);

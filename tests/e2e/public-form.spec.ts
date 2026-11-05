@@ -21,6 +21,12 @@ test('pemohon langsung tercatat tanpa approval dan admin memonitor data cuti',as
   let start=addMonths(config.today,1);
   while(!isWorking(start,unit.calendar)||blockedDays(start.slice(0,7),unit.calendar).includes(start))start=addDays(start,1);
   await page.getByLabel('Tanggal mulai',{exact:true}).fill(display(start));
+  await expect(page.getByLabel('Tanggal akhir',{exact:true})).toHaveValue('');
+  await expect(page.getByRole('button',{name:'Kirim pengajuan',exact:true})).toBeDisabled();
+  await page.getByLabel('Tanggal akhir',{exact:true}).fill(display(start));
+  await page.getByLabel('Tanggal mulai',{exact:true}).clear();
+  await expect(page.getByLabel('Tanggal akhir',{exact:true})).toHaveValue('');
+  await page.getByLabel('Tanggal mulai',{exact:true}).fill(display(start));
   await page.getByLabel('Tanggal akhir',{exact:true}).fill(display(start));
   await page.keyboard.press('Escape');await page.getByLabel('Alasan pengajuan',{exact:true}).click();
   await expect(page.getByRole('button',{name:'Kirim pengajuan',exact:true})).toBeEnabled();
