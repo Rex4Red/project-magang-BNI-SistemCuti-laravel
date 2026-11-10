@@ -7,8 +7,8 @@ const database=resolve('.runtime/e2e.sqlite');
 if(existsSync(database))unlinkSync(database);
 writeFileSync(database,'');
 const php=process.env.PHP_BINARY??(existsSync('.tools/php/php.exe')?resolve('.tools/php/php.exe'):'php');
-const cache=resolve('.runtime/e2e-cache',Date.now().toString());
-const env={...process.env,CUTI_PUBLIC_FORM:process.env.CUTI_PUBLIC_FORM??'false',APP_ENV:'testing',APP_URL:'http://127.0.0.1:5174',APP_DEBUG:'true',DB_CONNECTION:'sqlite',DB_DATABASE:database,DB_URL:'',DEMO_MODE:'true',CUTI_MAIL_MODE:'capture',CACHE_STORE:'file',CACHE_FILE_PATH:cache,CACHE_LOCK_PATH:cache+'/locks',SESSION_DRIVER:'file'};
+// Array cache keeps rate-limit counters within each HTTP request; feature tests cover throttling.
+const env={...process.env,CUTI_PUBLIC_FORM:process.env.CUTI_PUBLIC_FORM??'false',APP_ENV:'testing',APP_URL:'http://127.0.0.1:5174',APP_DEBUG:'true',DB_CONNECTION:'sqlite',DB_DATABASE:database,DB_URL:'',DEMO_MODE:'true',CUTI_MAIL_MODE:'capture',CACHE_STORE:'array',SESSION_DRIVER:'file'};
 for(const args of [['artisan','migrate','--force','--no-interaction'],['artisan','cuti:setup','--demo','--no-interaction']]){
   const result=spawnSync(php,args,{env,stdio:'inherit'});
   if(result.status!==0)process.exit(result.status??1);

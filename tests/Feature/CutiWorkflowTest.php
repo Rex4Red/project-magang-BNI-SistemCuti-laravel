@@ -7,6 +7,7 @@ use App\Domain\LeaveRules;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\TestCase;
@@ -268,6 +269,23 @@ class CutiWorkflowTest extends TestCase
             unlink($file);
         }
         $this->get('/api/leave-calendar.xlsx?month=2028-02&position=BM')->assertOk()->assertDownload('rekap-kalender-cuti-2028-02.xlsx');
+    }
+
+    public function test_login_rate_limit_blocks_the_31st_attempt_until_the_15_minute_window_expires(): void
+    {
+        $key = 'api/login:127.0.0.1';
+        RateLimiter::clear($key);
+        for ($attempt = 0; $attempt < 29; $attempt++) {
+            RateLimiter::hit($key, 900);
+        }
+        $credentials = ['email' => 'admin@demo.bni.local', 'password' => 'BniCuti!2026'];
+        $this->postJson('/api/login', $credentials)->assertOk();
+        $this->assertDatabaseCount('cuti_sessions', 1);
+        $this->postJson('/api/login', $credentials)->assertStatus(429)->assertJsonPath('message', 'Terlalu banyak percobaan. Coba lagi dalam 15 menit.');
+        $this->assertDatabaseCount('cuti_sessions', 1);
+        $this->travel(16)->minutes();
+        $this->postJson('/api/login', $credentials)->assertOk();
+        $this->assertDatabaseCount('cuti_sessions', 2);
     }
 
     public function test_mutating_requests_reject_untrusted_origins_and_missing_custom_header(): void
