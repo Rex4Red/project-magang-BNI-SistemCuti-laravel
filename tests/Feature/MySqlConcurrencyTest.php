@@ -29,7 +29,7 @@ class MySqlConcurrencyTest extends TestCase
         $days = array_values(array_filter(LeaveRules::monthDays($month), fn ($day) => $day >= $minimum && LeaveRules::isWorking($day, $calendar) && ! in_array($day, LeaveRules::blockedDays($month, $calendar), true) && ! collect($store->requests('KC01'))->contains(fn ($r) => $r['position'] === 'CS_BINA' && in_array($day, $r['days'], true))));
         $this->assertGreaterThanOrEqual(2, count($days));
         $connection = config('database.connections.mysql');
-        $environment = ['APP_ENV' => 'testing', 'APP_KEY' => config('app.key'), 'DB_CONNECTION' => 'mysql', 'DB_HOST' => $connection['host'], 'DB_PORT' => (string) $connection['port'], 'DB_DATABASE' => $connection['database'], 'DB_USERNAME' => $connection['username'], 'DB_PASSWORD' => $connection['password'], 'DB_URL' => '', 'CACHE_STORE' => 'array'];
+        $environment = ['APP_ENV' => 'testing', 'APP_KEY' => config('app.key'), 'CUTI_PUBLIC_FORM' => config('cuti.public_form') ? 'true' : 'false', 'DB_CONNECTION' => 'mysql', 'DB_HOST' => $connection['host'], 'DB_PORT' => (string) $connection['port'], 'DB_DATABASE' => $connection['database'], 'DB_USERNAME' => $connection['username'], 'DB_PASSWORD' => $connection['password'], 'DB_URL' => '', 'CACHE_STORE' => 'array'];
         $directory = base_path('.runtime');
         if (! is_dir($directory)) {
             mkdir($directory, 0700, true);
@@ -40,6 +40,7 @@ class MySqlConcurrencyTest extends TestCase
             foreach (['employee', 'race-b'] as $index => $id) {
                 $actor = $store->employee($id);
                 $input = ['category' => 'REGULAR', 'subtype' => 'Keluarga', 'reason' => 'Pengajuan bersamaan untuk slot terakhir.', 'npp' => 'P000001', 'start' => $days[$index], 'end' => $days[$index], 'email' => $actor['email'], 'phone' => $actor['phone']];
+                $input = LeaveService::input($input, $actor);
                 $preview = app(LeaveService::class)->preview($actor, $input);
                 $this->assertSame([], $preview['errors']);
                 $ready = $directory.'/race-'.Str::uuid().'.ready';
