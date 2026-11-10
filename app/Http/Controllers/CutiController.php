@@ -92,6 +92,7 @@ final class CutiController extends Controller
         $all = $this->store->requests($actor['unit']);
         $policy = $this->store->policy($actor['unit']);
         $sdm = CutiStore::canReview($actor);
+        $admin = in_array('ADMIN', $actor['roles'], true);
         $visible = array_values(array_filter($all, fn ($r) => $sdm ? $r['status'] !== 'DRAFT' : ($r['employeeId'] === $actor['id'] || ($r['replacement']['employeeId'] ?? '') === $actor['id'])));
         usort($visible, fn ($a, $b) => strcmp($b['createdAt'], $a['createdAt']));
         $quotas = [];
@@ -102,9 +103,9 @@ final class CutiController extends Controller
         }
         $calendar = [];
         foreach ($all as $leave) {
-            if (in_array($leave['status'], LeaveRules::ACTIVE, true) && str_starts_with($leave['effectiveStart'], $month) && ($sdm || $leave['position'] === $actor['position'] || ($leave['replacement']['employeeId'] ?? '') === $actor['id'])) {
+            if (in_array($leave['status'], LeaveRules::ACTIVE, true) && str_starts_with($leave['effectiveStart'], $month) && ($sdm || $admin || $leave['position'] === $actor['position'] || ($leave['replacement']['employeeId'] ?? '') === $actor['id'])) {
                 $canRead = CutiStore::canRead($actor, $leave);
-                $calendar[] = ['id' => $canRead ? $leave['id'] : '', 'name' => $canRead ? $leave['employeeName'] : 'Rekan satu posisi', 'position' => $leave['position'], 'status' => $leave['status'], 'days' => $leave['days']];
+                $calendar[] = ['id' => $canRead ? $leave['id'] : '', 'name' => ($canRead || $admin) ? $leave['employeeName'] : 'Rekan satu posisi', 'position' => $leave['position'], 'status' => $leave['status'], 'days' => $leave['days']];
             }
         }
         $location = collect($this->store->outlets($actor['unit']))->firstWhere('id', CutiStore::outletId($actor));
@@ -114,7 +115,7 @@ final class CutiController extends Controller
 
     public function preview(Request $request): JsonResponse
     {
-        return response()->json($this->leaves->preview($request->attributes->get('actor'), LeaveService::input($request->all())));
+        return response()->json($this->leaves->preview($request->attributes->get('actor'), LeaveService::input($request->all(), $request->attributes->get('actor'))));
     }
 
     public function submit(Request $request): JsonResponse
@@ -171,6 +172,23 @@ final class CutiController extends Controller
         }
 
         return response()->json($this->admin->execute($request->attributes->get('actor'), $action, $body, $request->header('Idempotency-Key', '')));
+    }
+
+    public function leaveCalendar(Request $request): Response
+    {
+        $actor = $request->attributes->get('actor');
+        CutiError::check(in_array('ADMIN', $actor['roles'], true) || in_array('SDM', $actor['roles'], true), 'Akses administrator atau SDM diperlukan.', 403);
+        $month = $this->month($request);
+        $position = $request->query('position', 'ALL');
+        CutiError::check(is_string($position) && strlen($position) <= 40, 'Filter posisi tidak valid.');
+        $data = $this->reports->calendarData($actor, $month, $position);
+        if ($request->route('format') === 'xlsx') {
+            $this->store->audit($actor, 'EXPORT_CALENDAR', $month);
+
+            return $this->reports->downloadCalendar($data, $actor);
+        }
+
+        return response()->json($data);
     }
 
     public function report(Request $request, string $format): Response

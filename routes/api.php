@@ -19,6 +19,8 @@ Route::controller(CutiController::class)->group(function () {
     Route::post('me/password', 'password');
     Route::post('logout', 'logout');
     Route::get('dashboard', 'dashboard');
+    Route::get('leave-calendar', 'leaveCalendar');
+    Route::get('leave-calendar.{format}', 'leaveCalendar')->where('format', 'xlsx');
     Route::post('leave-requests/preview', 'preview');
     Route::post('leave-requests', 'submit');
     Route::get('leave-requests/{id}', 'detail');

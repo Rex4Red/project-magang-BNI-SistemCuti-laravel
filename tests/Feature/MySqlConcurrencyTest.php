@@ -39,7 +39,7 @@ class MySqlConcurrencyTest extends TestCase
         try {
             foreach (['employee', 'race-b'] as $index => $id) {
                 $actor = $store->employee($id);
-                $input = ['category' => 'REGULAR', 'subtype' => 'Keluarga', 'reason' => 'Pengajuan bersamaan untuk slot terakhir.', 'start' => $days[$index], 'end' => $days[$index], 'email' => $actor['email'], 'phone' => $actor['phone']];
+                $input = ['category' => 'REGULAR', 'subtype' => 'Keluarga', 'reason' => 'Pengajuan bersamaan untuk slot terakhir.', 'npp' => 'P000001', 'start' => $days[$index], 'end' => $days[$index], 'email' => $actor['email'], 'phone' => $actor['phone']];
                 $preview = app(LeaveService::class)->preview($actor, $input);
                 $this->assertSame([], $preview['errors']);
                 $ready = $directory.'/race-'.Str::uuid().'.ready';

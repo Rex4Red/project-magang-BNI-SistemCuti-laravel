@@ -23,7 +23,7 @@ test('admin configures PGS across outlets and SDM checks availability before app
   const employeeContext=await browser.newContext();const employee=await employeeContext.newPage();await employee.goto('/');await employee.getByLabel('Email karyawan').fill('bm-ui@demo.bni.local');await employee.getByLabel('Kata sandi',{exact:true}).fill('abc123');await employee.getByRole('button',{name:'Masuk',exact:true}).click();
   await expect(employee.getByRole('heading',{name:'Ringkasan',exact:true})).toBeVisible();
   const config=await (await employee.request.get('/api/config')).json();let start=addMonths(config.today,1);while(!isWorking(start,DEFAULT_CALENDAR)||blockedDays(start.slice(0,7),DEFAULT_CALENDAR).includes(start))start=addDays(start,1);
-  const input={category:'REGULAR',subtype:'Keperluan keluarga',reason:'Pengujian pengganti dari outlet lain.',start,end:start,email:'bm-ui@demo.bni.local',phone:'081234567899'};
+  const input={category:'REGULAR',subtype:'Keperluan keluarga',reason:'Pengujian pengganti dari outlet lain.',npp:'P000002',start,end:start,email:'bm-ui@demo.bni.local',phone:'081234567899'};
   const previewResponse=await employee.request.post('/api/leave-requests/preview',{headers:{'X-Cuti-Client':'web'},data:input});const preview=await previewResponse.json();expect(previewResponse.status(),JSON.stringify(preview)).toBe(200);
   const response=await employee.request.post('/api/leave-requests',{headers:{'X-Cuti-Client':'web','Idempotency-Key':crypto.randomUUID()},data:{...input,fingerprint:preview.fingerprint,acceptAdjustment:true}});const leave=await response.json();expect(response.status(),JSON.stringify(leave)).toBe(201);
   const hrContext=await browser.newContext();const hr=await hrContext.newPage();await login(hr,'SDM');await hr.locator('nav').getByRole('button',{name:/Pengajuan cuti/}).click();await hr.getByLabel('Cari pengajuan').fill(leave.number);await hr.getByRole('button',{name:'Lihat BM Outlet Uji '+leave.number,exact:true}).click();
@@ -78,6 +78,7 @@ test('employee submits regular leave, SDM confirms and approves, email captured'
   await page.locator('nav').getByRole('button',{name:'Ajukan cuti',exact:true}).click();
   await page.getByRole('combobox',{name:'Jenis cuti',exact:true}).selectOption('Keperluan keluarga');await page.getByLabel('Alasan pengajuan').fill('Menghadiri acara keluarga untuk pengujian aplikasi.');
   await page.getByLabel('Tanggal mulai',{exact:true}).fill(start);await page.getByLabel('Tanggal akhir',{exact:true}).fill(start);
+  await page.getByLabel('NPP',{exact:true}).fill('P000001');
   await expect(page.getByRole('button',{name:'Tinjau pengajuan'})).toBeEnabled();await page.getByRole('button',{name:'Tinjau pengajuan'}).click();await page.getByRole('button',{name:'Kirim pengajuan'}).click();
   const dialog=page.getByRole('dialog');await expect(dialog.getByText('Disetujui',{exact:true})).toBeVisible();const title=await dialog.locator('.modal-header h2').innerText();const number=title.replace('Detail ','');
   await expect(dialog.getByRole('button',{name:'Tarik pengajuan',exact:true})).toHaveCount(0);

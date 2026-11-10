@@ -7,7 +7,7 @@ export const POSITIONS = [
 export type Role = 'EMPLOYEE'|'SDM'|'ADMIN';
 export type Status = 'DRAFT'|'PENDING_SDM'|'APPROVED'|'RECORDED'|'REJECTED'|'WITHDRAWN';
 export type PositionDefinition = readonly [string,string,number];
-export interface Employee { id:string; name:string; email:string; phone:string; position:string; unit:string; roles:Role[]; active:boolean; deletedAt?:string; outletId?:string; positionName?:string; publicApplicant?:boolean; }
+export interface Employee { id:string; name:string; npp?:string; email:string; phone:string; position:string; unit:string; roles:Role[]; active:boolean; deletedAt?:string; outletId?:string; positionName?:string; publicApplicant?:boolean; }
 export interface Outlet { id:string; unit:string; name:string; deletedAt?:string; }
 export interface ReplacementRule { position:string; enabled:boolean; sourcePositions:string[]; sameOutlet:boolean; otherOutlets:'NONE'|'ALL'|'SELECTED'; outletIds:string[]; }
 export interface ReplacementAssignment { employeeId:string; employeeName:string; position:string; positionName?:string; outletId:string; outletName:string; assignedAt:string; assignedBy:string; phone?:string; email?:string; notifiedAt?:string; notifiedChannel?:string; notifiedBy?:string; }
@@ -16,9 +16,9 @@ export interface ReplacementCheck { rule:ReplacementRule|null; outletId:string; 
 export interface Calendar { version:number; weekdays:number[]; exceptions:Record<string, {working:boolean; label:string}>; }
 export interface Policy { calendar:Calendar; quotas:Record<string,Record<string,number>>; replacementRules?:Record<string,ReplacementRule>; positions?:PositionDefinition[]; }
 export const positionsFor=(policy:Policy):readonly PositionDefinition[]=>policy.positions??POSITIONS;
-export interface LeaveInput { category:'REGULAR'|'EMERGENCY'; subtype:string; reason:string; start:string; end:string; email:string; phone:string; }
+export interface LeaveInput { category:'REGULAR'|'EMERGENCY'; subtype:string; reason:string; start:string; end:string; npp?:string; email?:string; phone?:string; }
 export interface LeaveCancellation { reason:string; requestedAt:string; status:'PENDING'|'APPROVED'|'REJECTED'; reviewedAt?:string; reviewedBy?:string; decisionReason?:string; }
-export interface Leave extends LeaveInput { id:string; number:string; employeeId:string; employeeName:string; position:string; unit:string; status:Status; days:string[]; effectiveStart:string; effectiveEnd:string; duration:number; submittedAt:string; createdAt:string; confirmation:'NOT_CONFIRMED'|'CONFIRMED'|'DECLINED'; confirmationChannel?:string; decisionReason?:string; version:number; calendarVersion:number; limit:number; events:{at:string; text:string; actor:string}[]; cancellation?:LeaveCancellation; outletId?:string; outletName?:string; positionName?:string; replacement?:ReplacementAssignment; replacementCheckedAt?:string; }
+export interface Leave extends LeaveInput { email:string; phone:string; id:string; number:string; employeeId:string; employeeName:string; position:string; unit:string; status:Status; days:string[]; effectiveStart:string; effectiveEnd:string; duration:number; submittedAt:string; createdAt:string; confirmation:'NOT_CONFIRMED'|'CONFIRMED'|'DECLINED'; confirmationChannel?:string; decisionReason?:string; version:number; calendarVersion:number; limit:number; events:{at:string; text:string; actor:string}[]; cancellation?:LeaveCancellation; outletId?:string; outletName?:string; positionName?:string; replacement?:ReplacementAssignment; replacementCheckedAt?:string; }
 export interface Quota { position:string; label:string; limit:number; used:number; approved:number; pending:number; available:number; alreadyCounted:boolean; }
 export interface Preview { days:string[]; effectiveStart:string; effectiveEnd:string; duration:number; minimum:string; blocked:string[]; adjusted:boolean; errors:{code:string; message:string}[]; quota:Quota; fingerprint?:string; scheduledAt?:string; }
 export const ACTIVE:Status[] = ['PENDING_SDM','APPROVED','RECORDED'];

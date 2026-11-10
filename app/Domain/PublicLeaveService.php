@@ -24,9 +24,9 @@ final class PublicLeaveService
 
     public function preview(array $body): array
     {
-        $input = LeaveService::input($body);
         $identity = $this->identity($body);
         $actor = $this->applicant($identity);
+        $input = LeaveService::input($body, $actor);
         $preview = $this->leaves->preview($actor, $input);
         $preview['fingerprint'] = $this->fingerprint($identity, $preview);
 
@@ -35,14 +35,14 @@ final class PublicLeaveService
 
     public function submit(array $body, string $key): array
     {
-        $input = LeaveService::input($body);
         $identity = $this->identity($body);
 
-        return DB::transaction(function () use ($identity, $input, $body, $key) {
+        return DB::transaction(function () use ($identity, $body, $key) {
             $outlet = DB::table('outlets')->where('id', $identity['outletId'])->first();
             CutiError::check($outlet, 'Outlet tidak tersedia.');
             DB::table('units')->where('id', $outlet->unit_id)->lockForUpdate()->first();
             $actor = $this->applicant($identity);
+            $input = LeaveService::input($body, $actor);
             $preview = $this->leaves->preview($actor, $input);
             CutiError::check(is_string($body['fingerprint'] ?? null) && hash_equals($this->fingerprint($identity, $preview), $body['fingerprint']), 'Data atau perhitungan berubah. Periksa formulir lalu kirim kembali.', 409, 'PREVIEW_CHANGED');
             if (! $this->store->employee($actor['id'])) {
@@ -65,13 +65,12 @@ final class PublicLeaveService
 
     private function identity(array $body): array
     {
+        $body['npp'] = is_string($body['npp'] ?? null) ? strtoupper(trim($body['npp'])) : ($body['npp'] ?? null);
         $identity = Validator::make($body, [
-            'name' => 'required|string|min:2|max:100', 'email' => 'required|email:rfc|max:200',
+            'name' => 'required|string|min:2|max:100', 'npp' => ['required', 'string', 'max:32', 'regex:/^[A-Z0-9-]+$/'],
             'position' => 'required|string|max:40', 'outletId' => 'required|string|max:64',
-            'phone' => ['required', 'string', 'regex:/^\+?[\d ()-]{8,20}$/'],
         ])->validate();
         $identity['name'] = preg_replace('/\s+/u', ' ', trim($identity['name']));
-        $identity['email'] = strtolower(trim($identity['email']));
 
         return $identity;
     }
@@ -84,19 +83,21 @@ final class PublicLeaveService
         $policy = $this->store->policy($row->unit_id);
         $position = collect(LeaveRules::positions($policy))->first(fn ($item) => $item[0] === $identity['position']);
         CutiError::check($position, 'Posisi tidak tersedia di cabang ini.');
-        $existing = DB::table('employees')->where('email', $identity['email'])->first();
+        $existing = DB::table('employees')->where('unit_id', $row->unit_id)->get()->first(fn ($person) => strtoupper(CutiStore::decode($person->data)['npp'] ?? '') === $identity['npp']);
         if ($existing) {
             $employee = CutiStore::decode($existing->data);
             CutiError::check($employee['active'] && empty($employee['deletedAt']) && in_array('EMPLOYEE', $employee['roles'], true)
                 && $employee['unit'] === $row->unit_id && $employee['position'] === $identity['position']
                 && CutiStore::outletId($employee) === $identity['outletId']
                 && mb_strtolower(preg_replace('/\s+/u', ' ', trim($employee['name']))) === mb_strtolower($identity['name']),
-                'Identitas tidak sesuai dengan data yang tersimpan. Periksa nama, email, posisi, dan outlet atau hubungi admin.', 422, 'IDENTITY_MISMATCH');
+                'Identitas tidak sesuai dengan data yang tersimpan. Periksa nama, NPP, posisi, dan outlet atau hubungi admin.', 422, 'IDENTITY_MISMATCH');
 
             return $employee;
         }
 
-        return [...$identity, 'id' => 'public-'.substr(hash('sha256', $identity['email']), 0, 40), 'unit' => $row->unit_id,
+        $identityHash = substr(hash('sha256', $row->unit_id.'|'.$identity['npp']), 0, 40);
+
+        return [...$identity, 'id' => 'public-'.$identityHash, 'email' => 'npp-'.$identityHash.'@cuti.invalid', 'phone' => '', 'unit' => $row->unit_id,
             'positionName' => $position[1], 'roles' => ['EMPLOYEE'], 'active' => true, 'publicApplicant' => true];
     }
 

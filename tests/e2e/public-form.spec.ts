@@ -10,8 +10,10 @@ test('pemohon langsung tercatat tanpa approval dan admin memonitor data cuti',as
   await expect(page.getByRole('heading',{name:'Pengajuan cuti',exact:true})).toBeVisible();
   await expect(page.getByLabel('Kata sandi',{exact:true})).toHaveCount(0);
   await page.getByLabel('Nama lengkap',{exact:true}).fill('Pemohon Form Publik');
-  await page.getByLabel('Email',{exact:true}).fill('public-ui@example.test');
-  await page.getByLabel('Nomor HP',{exact:true}).fill('081234567899');
+  await expect(page.getByLabel('Email',{exact:true})).toHaveCount(0);
+  await expect(page.getByLabel('Nomor HP',{exact:true})).toHaveCount(0);
+  await expect(page.getByLabel('NPP',{exact:true})).not.toHaveAttribute('placeholder');
+  await page.getByLabel('NPP',{exact:true}).fill('P123456');
   const config=await (await page.request.get('/api/public/form')).json();
   const unit=config.units[0];
   await page.getByLabel('Outlet',{exact:true}).selectOption(unit.outlets[0].id);
@@ -48,7 +50,11 @@ test('pemohon langsung tercatat tanpa approval dan admin memonitor data cuti',as
 
   const adminContext=await browser.newContext();const admin=await adminContext.newPage();
   await admin.goto('/');await admin.getByRole('link',{name:'Masuk admin',exact:true}).click();
-  await admin.getByRole('button',{name:'Admin',exact:true}).click();await admin.getByRole('button',{name:'Masuk',exact:true}).click();
+  await expect(admin.locator('.demo-accounts')).toHaveCount(0);
+  await admin.screenshot({path:testInfo.outputPath('admin-login.png'),fullPage:true});
+  await admin.getByLabel('Email admin',{exact:true}).fill('admin@demo.bni.local');
+  await admin.getByLabel('Kata sandi',{exact:true}).fill('BniCuti!2026');
+  await admin.getByRole('button',{name:'Masuk',exact:true}).click();
   await expect(admin.getByRole('heading',{name:'Ringkasan',exact:true})).toBeVisible();
   const popup=admin.getByRole('dialog',{name:'Pengajuan menunggu review'});
   await expect(popup).toHaveCount(0);
@@ -77,6 +83,14 @@ test('pemohon langsung tercatat tanpa approval dan admin memonitor data cuti',as
   await admin.locator('nav').getByRole('button',{name:'Kalender cuti',exact:true}).click();
   await admin.getByLabel('Bulan monitoring').fill(start.slice(0,7));
   await expect(admin.locator('.calendar-event').filter({hasText:'Pemohon Form Publik'}).first()).toContainText('Tercatat');
+  await admin.getByRole('tab',{name:'Rekap bulanan',exact:true}).click();
+  const rekapRow=admin.locator('.leave-summary-table tbody tr').filter({hasText:'Pemohon Form Publik'});
+  await expect(rekapRow).toContainText('P123456');
+  await expect(rekapRow.locator('.summary-approved').first()).toBeVisible();
+  await expect(admin.locator('.summary-legend')).toContainText('Tercatat');
+  const downloadPromise=admin.waitForEvent('download');
+  await admin.getByRole('link',{name:'Ekspor Excel',exact:true}).click();
+  expect((await downloadPromise).suggestedFilename()).toBe('rekap-kalender-cuti-'+start.slice(0,7)+'.xlsx');
   const verification=await admin.request.get('/api/verify-certificate?num='+encodeURIComponent(number));
   expect(await verification.json()).toMatchObject({valid:true,recordOnly:true,status:'RECORDED'});
   await admin.locator('nav').getByRole('button',{name:'Administrasi',exact:true}).click();

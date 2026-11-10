@@ -44,7 +44,7 @@ final class AdminService
 
     private function employee(array $actor, array $body): array
     {
-        $body = Validator::make($body, ['id' => 'sometimes|string|max:64', 'name' => 'required|string|min:2|max:100', 'email' => 'required|email:rfc|max:200', 'phone' => ['required', 'string', 'regex:/^\+?[\d ()-]{8,20}$/'], 'position' => 'required|string|max:40', 'outletId' => 'sometimes|string|max:64', 'roles' => 'required|array|min:1|max:3', 'roles.*' => 'required|in:EMPLOYEE,SDM,ADMIN|distinct', 'active' => 'required|boolean', 'password' => ['sometimes', 'string', 'max:72', 'regex:'.LeaveRules::PASSWORD_PATTERN]])->validate();
+        $body = Validator::make($body, ['id' => 'sometimes|string|max:64', 'name' => 'required|string|min:2|max:100', 'npp' => ['nullable', 'string', 'max:32', 'regex:/^[A-Za-z0-9-]+$/'], 'email' => 'required|email:rfc|max:200', 'phone' => ['required', 'string', 'regex:/^\+?[\d ()-]{8,20}$/'], 'position' => 'required|string|max:40', 'outletId' => 'sometimes|string|max:64', 'roles' => 'required|array|min:1|max:3', 'roles.*' => 'required|in:EMPLOYEE,SDM,ADMIN|distinct', 'active' => 'required|boolean', 'password' => ['sometimes', 'string', 'max:72', 'regex:'.LeaveRules::PASSWORD_PATTERN]])->validate();
         $existing = ! empty($body['id']) ? $this->store->employee($body['id']) : null;
         if (! empty($body['id'])) {
             CutiError::check($existing && empty($existing['deletedAt']) && $existing['unit'] === $actor['unit'], 'Pegawai tidak ditemukan.', 404);
@@ -66,6 +66,8 @@ final class AdminService
         if ($existing && ($existing['position'] !== $body['position'] || CutiStore::outletId($existing) !== $outlet || ! $body['active'] || ! in_array('EMPLOYEE', $body['roles'], true))) {
             $this->checkUnassigned($existing);
         }
+        $body['npp'] = strtoupper(trim($body['npp'] ?? $existing['npp'] ?? ''));
+        CutiError::check($body['npp'] === '' || ! collect($this->store->employees($actor['unit']))->contains(fn ($person) => $person['id'] !== ($existing['id'] ?? '') && strtoupper($person['npp'] ?? '') === $body['npp']), 'NPP sudah digunakan oleh karyawan lain.', 409);
         $id = $existing['id'] ?? (string) Str::uuid();
         $password = $body['password'] ?? null;
         unset($body['password'], $body['id']);

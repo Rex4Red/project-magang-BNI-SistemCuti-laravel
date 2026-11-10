@@ -14,8 +14,8 @@ export function PublicLeaveForm({DatePicker, onAdmin}:{DatePicker:DateField;onAd
   const [config,setConfig] = useState<FormConfig|null>(null);
   const [loadError,setLoadError] = useState('');
   const [reload,setReload] = useState(0);
-  const [identity,setIdentity] = useState({name:'',email:'',phone:'',position:'',outletId:''});
-  const [input,setInput] = useState<LeaveInput>({category:'REGULAR',subtype:'',reason:'',start:'',end:'',email:'',phone:''});
+  const [identity,setIdentity] = useState({name:'',npp:'',position:'',outletId:''});
+  const [input,setInput] = useState<LeaveInput>({category:'REGULAR',subtype:'',reason:'',start:'',end:''});
   const [preview,setPreview] = useState<Preview|null>(null);
   const [error,setError] = useState('');
   const [checking,setChecking] = useState(false);
@@ -26,7 +26,7 @@ export function PublicLeaveForm({DatePicker, onAdmin}:{DatePicker:DateField;onAd
   const revision = useRef(0);
   const currentUnit = config?.units.find(unit=>unit.outlets.some(outlet=>outlet.id===identity.outletId));
   const payload = {...input,...identity};
-  const complete = identity.name.trim().length>=2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity.email) && /^\+?[\d ()-]{8,20}$/.test(identity.phone) && identity.position && identity.outletId && input.reason.trim().length>=10 && input.subtype.trim().length>=2 && input.start && input.end;
+  const complete = identity.name.trim().length>=2 && /^[A-Za-z0-9-]{1,32}$/.test(identity.npp.trim()) && identity.position && identity.outletId && input.reason.trim().length>=10 && input.subtype.trim().length>=2 && input.start && input.end;
   const minimum = config ? input.category==='REGULAR' ? addMonths(config.today,1) : config.today : '';
   const endDates = input.start && currentUnit ? getValidEndDates(input.start,currentUnit.calendar) : [];
 
@@ -88,9 +88,9 @@ export function PublicLeaveForm({DatePicker, onAdmin}:{DatePicker:DateField;onAd
           <fieldset disabled={busy} className="public-fields">
             <section className="public-section"><h2>Data pemohon</h2>
               <Field label="Nama lengkap"><input required minLength={2} maxLength={100} autoComplete="name" value={identity.name} onChange={e=>updateIdentity('name',e.target.value)}/></Field>
-              <div className="public-grid"><Field label="Email"><input type="email" required maxLength={200} autoComplete="email" value={identity.email} onChange={e=>updateIdentity('email',e.target.value)}/></Field><Field label="Nomor HP"><input type="tel" required minLength={8} maxLength={20} autoComplete="tel" value={identity.phone} onChange={e=>updateIdentity('phone',e.target.value)}/></Field></div>
+              <Field label="NPP"><input aria-label="NPP" required maxLength={32} autoComplete="off" pattern={'[A-Za-z0-9\\-]+'} value={identity.npp} onChange={e=>updateIdentity('npp',e.target.value.toUpperCase())}/></Field>
               <div className="public-grid"><Field label="Outlet"><select aria-label="Outlet" required value={identity.outletId} onChange={e=>updateIdentity('outletId',e.target.value)}><option value="">Pilih outlet</option>{config.units.flatMap(unit=>unit.outlets.map(outlet=><option key={outlet.id} value={outlet.id}>{outlet.name}</option>))}</select></Field><Field label="Posisi"><select aria-label="Posisi" required disabled={!currentUnit} value={identity.position} onChange={e=>updateIdentity('position',e.target.value)}><option value="">Pilih posisi</option>{currentUnit?.positions.map(([code,label])=><option key={code} value={code}>{label}</option>)}</select></Field></div>
-              <p className="public-note">Gunakan email yang sama untuk setiap pengajuan agar kuota bulanan tetap tercatat untuk satu orang.</p>
+              <p className="public-note">Gunakan NPP yang sama untuk setiap pengajuan agar kuota bulanan tetap tercatat untuk satu orang.</p>
             </section>
             <section className="public-section"><h2>Rencana cuti</h2>
               <fieldset className="public-category"><legend>Kategori cuti</legend>{[['REGULAR','Reguler'],['EMERGENCY','Darurat']].map(([value,label])=><label key={value}><input type="radio" name="category" checked={input.category===value} onChange={()=>updateInput('category',value)}/>{label}</label>)}</fieldset>

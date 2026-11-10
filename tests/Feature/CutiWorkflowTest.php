@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\TestCase;
 
 class CutiWorkflowTest extends TestCase
@@ -37,7 +38,7 @@ class CutiWorkflowTest extends TestCase
             $start = CarbonImmutable::parse($start)->addDay()->format('Y-m-d');
         }
 
-        return ['category' => 'REGULAR', 'subtype' => 'Keluarga', 'reason' => 'Pengujian cuti keluarga.', 'start' => $start, 'end' => $start, 'email' => 'karyawan@demo.bni.local', 'phone' => '081234567899'];
+        return ['category' => 'REGULAR', 'subtype' => 'Keluarga', 'reason' => 'Pengujian cuti keluarga.', 'npp' => 'P000001', 'start' => $start, 'end' => $start, 'email' => 'karyawan@demo.bni.local', 'phone' => '081234567899'];
     }
 
     private function submit(): array
@@ -151,6 +152,122 @@ class CutiWorkflowTest extends TestCase
         $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson('/api/admin/outlets', ['id' => 'KC01-MAIN', 'name' => 'SUDIRMAN'])->assertOk();
         $this->actor('employee');
         $this->getJson('/api/dashboard?month='.substr($leave['start'], 0, 7))->assertOk()->assertJsonPath('outletName', 'SUDIRMAN');
+    }
+
+    public function test_leave_requires_npp_and_uses_profile_contacts_instead_of_form_contacts(): void
+    {
+        $this->actor('employee');
+        $input = $this->input();
+        unset($input['email'], $input['phone'], $input['npp']);
+        $this->postJson('/api/leave-requests/preview', $input)->assertUnprocessable();
+        $this->postJson('/api/leave-requests/preview', [...$input, 'npp' => '=1+1'])->assertUnprocessable();
+        $input['npp'] = '000123';
+        $preview = $this->postJson('/api/leave-requests/preview', $input)->assertOk()->json();
+        $employee = app(CutiStore::class)->employee('employee');
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/leave-requests', [...$input, 'email' => 'forged@example.test', 'phone' => '081111111111', 'fingerprint' => $preview['fingerprint'], 'acceptAdjustment' => true])
+            ->assertCreated()->assertJsonPath('npp', '000123')->assertJsonPath('email', $employee['email'])->assertJsonPath('phone', $employee['phone']);
+    }
+
+    public function test_npp_must_match_the_profile_and_is_preserved_in_a_draft(): void
+    {
+        $store = app(CutiStore::class);
+        $employee = [...$store->employee('employee'), 'npp' => 'P000001'];
+        DB::table('employees')->where('id', 'employee')->update(['data' => CutiStore::json($employee)]);
+        $this->actor('employee');
+        $this->postJson('/api/leave-requests/preview', [...$this->input(), 'npp' => 'P999999'])->assertUnprocessable();
+        $draft = $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson('/api/drafts', ['category' => 'REGULAR', 'npp' => 'p000001'])->assertOk()->assertJsonPath('npp', 'P000001')->json();
+        $this->getJson('/api/leave-requests/'.$draft['id'])->assertOk()->assertJsonPath('npp', 'P000001')->assertJsonPath('email', $employee['email']);
+    }
+
+    public function test_admin_can_store_npp_and_cannot_assign_a_duplicate(): void
+    {
+        $this->actor('admin');
+        $store = app(CutiStore::class);
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson('/api/admin/employee', [...$store->employee('employee'), 'npp' => 'p041629'])->assertOk()->assertJsonPath('npp', 'P041629');
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson('/api/admin/employee', [...$store->employee('staff0'), 'npp' => 'P041629'])->assertConflict();
+        $this->assertSame('P041629', $store->employee('employee')['npp']);
+    }
+
+    private function calendarFixtures(): void
+    {
+        $store = app(CutiStore::class);
+        $template = $store->requests('KC01')[0];
+        DB::table('requests')->delete();
+        $policy = $store->policy('KC01');
+        $policy['calendar']['exceptions']['2026-10-05'] = ['working' => false, 'label' => 'Libur unit'];
+        $store->savePolicy('KC01', $policy);
+        $base = [...$template, 'id' => 'calendar-approved', 'employeeId' => 'staff0', 'employeeName' => '=SUM(1,1)', 'npp' => '000123', 'position' => 'TELLER', 'positionName' => 'Teller', 'status' => 'APPROVED', 'days' => ['2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06'], 'start' => '2026-10-01', 'end' => '2026-10-06', 'effectiveStart' => '2026-10-01', 'effectiveEnd' => '2026-10-06', 'subtype' => 'Cuti Tahunan', 'reason' => 'ALASAN RAHASIA', 'replacement' => ['employeeName' => '=2+2']];
+        $store->saveRequest($base);
+        $store->saveRequest([...$base, 'id' => 'calendar-pending', 'employeeName' => 'Z Pending', 'position' => 'BM', 'positionName' => 'BM', 'status' => 'PENDING_SDM']);
+        foreach (['DRAFT', 'REJECTED', 'WITHDRAWN'] as $status) {
+            $store->saveRequest([...$base, 'id' => 'calendar-'.$status, 'status' => $status]);
+        }
+        DB::table('units')->insert(['id' => 'KC02', 'name' => 'Cabang lain', 'policy' => CutiStore::json($policy)]);
+        $store->saveRequest([...$base, 'id' => 'calendar-foreign', 'unit' => 'KC02']);
+    }
+
+    public function test_calendar_summary_filters_active_leaves_and_preserves_branch_privacy(): void
+    {
+        $this->calendarFixtures();
+        $this->actor('admin');
+        $response = $this->getJson('/api/leave-calendar?month=2026-10')->assertOk()->assertJsonCount(31, 'days')->assertJsonCount(2, 'rows')->assertJsonPath('rows.0.npp', '000123')->assertJsonPath('rows.0.cells.0.text', '=2+2')->assertJsonPath('days.2.off', true)->assertJsonPath('days.4.off', true)->assertJsonPath('rows.0.cells.4.active', false);
+        $this->assertStringNotContainsString('ALASAN RAHASIA', $response->getContent());
+        $this->assertArrayNotHasKey('email', $response->json('rows.0'));
+        $this->getJson('/api/leave-calendar?month=2026-10&position=BM')->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.name', 'Z Pending');
+        $this->getJson('/api/leave-calendar?month=2026-10&position=INVALID')->assertUnprocessable();
+        $this->getJson('/api/leave-calendar?month=2026-13')->assertUnprocessable();
+        $this->getJson('/api/leave-calendar?month=2028-02')->assertOk()->assertJsonCount(29, 'days')->assertJsonCount(0, 'rows');
+        $this->getJson('/api/dashboard?month=2026-10')->assertOk()->assertJsonCount(2, 'calendar')->assertJsonFragment(['name' => '=SUM(1,1)', 'id' => '']);
+        $this->getJson('/api/leave-requests/calendar-approved')->assertNotFound();
+        $this->actor('sdm');
+        $this->getJson('/api/leave-calendar?month=2026-10')->assertOk()->assertJsonCount(2, 'rows');
+    }
+
+    public function test_calendar_summary_and_export_require_admin_or_sdm_access(): void
+    {
+        foreach (['leave-calendar', 'leave-calendar.xlsx'] as $endpoint) {
+            $this->getJson('/api/'.$endpoint.'?month=2026-10')->assertUnauthorized();
+        }
+        $this->actor('employee');
+        foreach (['leave-calendar', 'leave-calendar.xlsx'] as $endpoint) {
+            $this->getJson('/api/'.$endpoint.'?month=2026-10')->assertForbidden();
+        }
+    }
+
+    public function test_calendar_excel_matches_the_grid_with_literal_npp_labels_and_day_colours(): void
+    {
+        $this->calendarFixtures();
+        $this->actor('admin');
+        $response = $this->get('/api/leave-calendar.xlsx?month=2026-10')->assertOk()->assertDownload('rekap-kalender-cuti-2026-10.xlsx');
+        $file = tempnam(sys_get_temp_dir(), 'cuti-calendar-');
+        try {
+            file_put_contents($file, $response->streamedContent());
+            $workbook = IOFactory::load($file);
+            $sheet = $workbook->getActiveSheet();
+            $this->assertSame('NPP', $sheet->getCell('C5')->getValue());
+            $this->assertSame('Oktober 2026', $sheet->getCell('F6')->getValue());
+            $this->assertSame(31, $sheet->getCell('AJ5')->getValue());
+            $this->assertSame('PENGGANTI / PGS', $sheet->getCell('AK5')->getValue());
+            $this->assertSame('000123', $sheet->getCell('C7')->getValue());
+            $this->assertSame('s', $sheet->getCell('C7')->getDataType());
+            $this->assertSame('=SUM(1,1)', $sheet->getCell('B7')->getValue());
+            $this->assertSame('s', $sheet->getCell('B7')->getDataType());
+            $this->assertSame('=2+2', $sheet->getCell('F7')->getValue());
+            $this->assertSame('s', $sheet->getCell('F7')->getDataType());
+            $this->assertSame('72B687', $sheet->getStyle('F7')->getFill()->getStartColor()->getRGB());
+            $this->assertSame('F3D16B', $sheet->getStyle('F8')->getFill()->getStartColor()->getRGB());
+            $this->assertSame('E69A9F', $sheet->getStyle('H7')->getFill()->getStartColor()->getRGB());
+            $this->assertSame('E69A9F', $sheet->getStyle('J7')->getFill()->getStartColor()->getRGB());
+            $this->assertContains('F7:G7', $sheet->getMergeCells());
+            $this->assertSame('F7', $sheet->getFreezePane());
+            $this->assertSame('landscape', $sheet->getPageSetup()->getOrientation());
+            $this->assertStringNotContainsString('ALASAN RAHASIA', CutiStore::json($sheet->toArray()));
+            $workbook->disconnectWorksheets();
+        } finally {
+            unlink($file);
+        }
+        $this->get('/api/leave-calendar.xlsx?month=2028-02&position=BM')->assertOk()->assertDownload('rekap-kalender-cuti-2028-02.xlsx');
     }
 
     public function test_mutating_requests_reject_untrusted_origins_and_missing_custom_header(): void

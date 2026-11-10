@@ -10,19 +10,24 @@ final class LeaveService
 {
     public function __construct(private CutiStore $store, private ReplacementService $replacements) {}
 
-    public static function input(array $body): array
+    public static function input(array $body, array $actor): array
     {
+        $body['npp'] = is_string($body['npp'] ?? null) ? strtoupper(trim($body['npp'])) : ($body['npp'] ?? null);
+        $body['email'] = str_ends_with($actor['email'], '@cuti.invalid') ? '' : $actor['email'];
+        $body['phone'] = $actor['phone'];
         $input = Validator::make($body, [
+            'npp' => ['required', 'string', 'max:32', 'regex:/^[A-Z0-9-]+$/'],
             'category' => 'required|in:REGULAR,EMERGENCY',
             'subtype' => 'required|string|min:2|max:120',
             'reason' => 'required|string|min:10|max:2000',
             'start' => ['required', fn ($attribute, $value, $fail) => LeaveRules::validDate($value) ?: $fail('Tanggal mulai tidak valid.')],
             'end' => ['required', fn ($attribute, $value, $fail) => LeaveRules::validDate($value) ?: $fail('Tanggal akhir tidak valid.')],
-            'email' => 'required|email:rfc|max:200',
-            'phone' => ['required', 'string', 'regex:/^\+?[\d ()-]{8,20}$/'],
+            'email' => (($actor['publicApplicant'] ?? false) ? 'nullable' : 'required').'|email:rfc|max:200',
+            'phone' => [($actor['publicApplicant'] ?? false) ? 'nullable' : 'required', 'string', 'regex:/^\+?[\d ()-]{8,20}$/'],
         ])->validate();
+        CutiError::check(empty($actor['npp']) || $input['npp'] === strtoupper($actor['npp']), 'NPP tidak sesuai dengan profil Anda. Hubungi administrator jika perlu diperbarui.');
         $domains = config('cuti.allowed_email_domains');
-        CutiError::check(! $domains || in_array(strtolower(explode('@', $input['email'])[1]), $domains, true), 'Domain email tidak diizinkan organisasi.');
+        CutiError::check(empty($input['email']) || ! $domains || in_array(strtolower(explode('@', $input['email'])[1]), $domains, true), 'Domain email tidak diizinkan organisasi.');
 
         return $input;
     }
@@ -46,7 +51,7 @@ final class LeaveService
 
     public function submit(array $actor, array $body, string $key): array
     {
-        $input = self::input($body);
+        $input = self::input($body, $actor);
 
         return $this->store->mutate($actor, $key, ['action' => 'submit', 'body' => $body], function () use ($actor, $body, $input) {
             $preview = $this->preview($actor, $input);
@@ -77,7 +82,9 @@ final class LeaveService
             $this->store->saveRequest($leave);
             $this->store->audit($actor, 'SUBMIT', $id);
             if ($recordOnly) {
-                $this->store->queueMail($leave, 'RECEIPT', $now);
+                if (! empty($leave['email'])) {
+                    $this->store->queueMail($leave, 'RECEIPT', $now);
+                }
                 $this->store->queueMail($leave, 'RECORD_NOTICE', $preview['scheduledAt']);
             } else {
                 $this->store->queueMail($leave, $input['category'] === 'REGULAR' ? 'REMINDER' : 'EMERGENCY', $preview['scheduledAt']);
@@ -206,7 +213,7 @@ final class LeaveService
 
     public function draft(array $actor, array $body, string $key): array
     {
-        $validated = Validator::make($body, ['id' => 'sometimes|string|max:64', 'version' => 'sometimes|integer', 'category' => 'required|in:REGULAR,EMERGENCY', 'subtype' => 'nullable|string|max:120', 'reason' => 'nullable|string|max:2000', 'start' => 'nullable|string|max:10', 'end' => 'nullable|string|max:10', 'email' => 'nullable|string|max:200', 'phone' => 'nullable|string|max:20'])->validate();
+        $validated = Validator::make($body, ['id' => 'sometimes|string|max:64', 'version' => 'sometimes|integer', 'category' => 'required|in:REGULAR,EMERGENCY', 'subtype' => 'nullable|string|max:120', 'reason' => 'nullable|string|max:2000', 'start' => 'nullable|string|max:10', 'end' => 'nullable|string|max:10', 'npp' => ['nullable', 'string', 'max:32', 'regex:/^[A-Za-z0-9-]+$/']])->validate();
 
         return $this->store->mutate($actor, $key, ['action' => 'draft', 'body' => $body], function () use ($actor, $validated) {
             $old = ! empty($validated['id']) ? $this->store->findLeave($actor, $validated['id']) : null;
@@ -214,9 +221,13 @@ final class LeaveService
                 CutiError::check($old['status'] === 'DRAFT' && $old['employeeId'] === $actor['id'] && $old['version'] === ($validated['version'] ?? null), 'Draft sudah berubah atau tidak ditemukan.', 409);
             }
             $input = ['category' => $validated['category']];
-            foreach (['subtype', 'reason', 'start', 'end', 'email', 'phone'] as $field) {
+            foreach (['subtype', 'reason', 'start', 'end', 'npp'] as $field) {
                 $input[$field] = $validated[$field] ?? '';
             }
+
+            $input['npp'] = strtoupper(trim($input['npp']));
+            $input['email'] = $actor['email'];
+            $input['phone'] = $actor['phone'];
 
             return $this->store->saveRequest([...$input, 'id' => $old['id'] ?? (string) Str::uuid(), 'number' => 'Draft', 'employeeId' => $actor['id'], 'employeeName' => $actor['name'], 'unit' => $actor['unit'], 'position' => $actor['position'], 'status' => 'DRAFT', 'days' => [], 'effectiveStart' => '', 'effectiveEnd' => '', 'duration' => 0, 'submittedAt' => '', 'createdAt' => $old['createdAt'] ?? LeaveRules::timestamp(), 'confirmation' => 'NOT_CONFIRMED', 'version' => ($old['version'] ?? 0) + 1, 'calendarVersion' => 0, 'limit' => 0, 'events' => []]);
         });

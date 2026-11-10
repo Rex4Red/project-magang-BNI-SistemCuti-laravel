@@ -1,0 +1,64 @@
+import {test, expect} from '@playwright/test';
+import {addDays, addMonths, blockedDays, DEFAULT_CALENDAR, isWorking} from '../../shared/domain';
+
+test('admin switches calendar views, filters a monthly grid and downloads matching Excel on desktop and mobile', async ({page}, testInfo) => {
+  const errors:string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const headers = {'X-Cuti-Client':'web'};
+  const login = async (email:string) => {
+    expect((await page.request.post('/api/login', {headers, data:{email, password:'BniCuti!2026'}})).ok()).toBe(true);
+  };
+  await login('karyawan@demo.bni.local');
+  const config = await (await page.request.get('/api/config')).json();
+  let start = addMonths(config.today, 2);
+  while (!isWorking(start, DEFAULT_CALENDAR) || blockedDays(start.slice(0, 7), DEFAULT_CALENDAR).includes(start)) start = addDays(start, 1);
+  const month = start.slice(0, 7);
+  const input = {category:'REGULAR', subtype:'Cuti Tahunan', reason:'Keperluan keluarga untuk pengujian rekap kalender.', start, end:start, npp:'000123'};
+  const preview = await page.request.post('/api/leave-requests/preview', {headers, data:input});
+  expect(preview.ok(), await preview.text()).toBe(true);
+  const submitted = await page.request.post('/api/leave-requests', {headers:{...headers, 'Idempotency-Key':crypto.randomUUID()}, data:{...input, fingerprint:(await preview.json()).fingerprint, acceptAdjustment:true}});
+  expect(submitted.status(), await submitted.text()).toBe(201);
+  await login('admin@demo.bni.local');
+  await page.setViewportSize({width:1440, height:1000});
+  await page.goto('/#calendar');
+  await page.getByLabel('Bulan monitoring').fill(month);
+  await expect(page.locator('.calendar-grid')).toBeVisible();
+  await page.getByRole('tab', {name:'Rekap bulanan'}).click();
+  const table = page.getByRole('table', {name:/Rekap cuti/});
+  await expect(table.getByRole('rowheader', {name:'Alya Rahma'})).toBeVisible();
+  await expect(table.getByRole('cell', {name:'000123', exact:true})).toBeVisible();
+  await expect(table.locator('tbody tr')).toHaveCount(1);
+  await expect(table.locator('.summary-approved')).toHaveCount(1);
+  await expect(table.locator('tbody .summary-off').first()).toBeVisible();
+  const dayWidths = await table.locator('thead tr:first-child th:not([rowspan])').evaluateAll(cells => cells.map(cell => cell.getBoundingClientRect().width));
+  expect(Math.max(...dayWidths) - Math.min(...dayWidths)).toBeLessThan(1);
+  await page.screenshot({path:testInfo.outputPath('rekap-desktop.png'), fullPage:true});
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('link', {name:'Ekspor Excel'}).click();
+  expect((await downloaded).suggestedFilename()).toBe(`rekap-kalender-cuti-${month}.xlsx`);
+  await page.getByLabel('Filter posisi rekap').selectOption('BBO');
+  await expect(page.getByRole('heading', {name:'Belum ada cuti aktif'})).toBeVisible();
+  await expect(page.getByRole('link', {name:'Ekspor Excel'})).toHaveAttribute('href', `/api/leave-calendar.xlsx?month=${month}&position=BBO`);
+  await page.getByLabel('Filter posisi rekap').selectOption('ALL');
+  await expect(table.getByRole('cell', {name:'000123', exact:true})).toBeVisible();
+  await page.setViewportSize({width:390, height:844});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('region', {name:'Tabel rekap kalender cuti'}).evaluate(element => {element.scrollLeft = element.scrollWidth;});
+  await expect(table.getByRole('columnheader', {name:'PENGGANTI / PGS'})).toBeInViewport();
+  await page.screenshot({path:testInfo.outputPath('rekap-mobile.png'), fullPage:true});
+  await page.getByRole('tab', {name:'Kalender', exact:true}).click();
+  await expect(page.locator('.calendar-grid')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('leave form asks for NPP without email and phone fields', async ({page}) => {
+  await page.goto('/');
+  await page.getByRole('button', {name:'Karyawan', exact:true}).click();
+  await page.getByRole('button', {name:'Masuk', exact:true}).click();
+  await page.locator('nav').getByRole('button', {name:'Ajukan cuti', exact:true}).click();
+  await expect(page.getByLabel('NPP', {exact:true})).toHaveValue('');
+  await expect(page.getByLabel('NPP', {exact:true})).toHaveAttribute('required', '');
+  await expect(page.getByLabel('Email pemberitahuan')).toHaveCount(0);
+  await expect(page.getByLabel('Nomor HP')).toHaveCount(0);
+  await expect(page.getByRole('tab', {name:'Rekap bulanan'})).toHaveCount(0);
+});
